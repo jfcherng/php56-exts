@@ -1,0 +1,12 @@
+src/php5/igbinary.lo: /root/software/php/php5/exts/igbinary-2.0.7/src/php5/igbinary.c
+	$(LIBTOOL) --mode=compile $(CC) -g -O2 -O2 -Wall -Wpointer-arith -Wcast-align -Wwrite-strings -Wswitch -finline-limit=10000 --param large-function-growth=10000 --param inline-unit-growth=10000 -I. -I/root/software/php/php5/exts/igbinary-2.0.7 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/exts/igbinary-2.0.7/src/php5/igbinary.c -o src/php5/igbinary.lo 
+src/php5/hash_si.lo: /root/software/php/php5/exts/igbinary-2.0.7/src/php5/hash_si.c
+	$(LIBTOOL) --mode=compile $(CC) -g -O2 -O2 -Wall -Wpointer-arith -Wcast-align -Wwrite-strings -Wswitch -finline-limit=10000 --param large-function-growth=10000 --param inline-unit-growth=10000 -I. -I/root/software/php/php5/exts/igbinary-2.0.7 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/exts/igbinary-2.0.7/src/php5/hash_si.c -o src/php5/hash_si.lo 
+src/php5/hash_si_ptr.lo: /root/software/php/php5/exts/igbinary-2.0.7/src/php5/hash_si_ptr.c
+	$(LIBTOOL) --mode=compile $(CC) -g -O2 -O2 -Wall -Wpointer-arith -Wcast-align -Wwrite-strings -Wswitch -finline-limit=10000 --param large-function-growth=10000 --param inline-unit-growth=10000 -I. -I/root/software/php/php5/exts/igbinary-2.0.7 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/exts/igbinary-2.0.7/src/php5/hash_si_ptr.c -o src/php5/hash_si_ptr.lo 
+$(phplibdir)/igbinary.la: ./igbinary.la
+	$(LIBTOOL) --mode=install cp ./igbinary.la $(phplibdir)
+
+./igbinary.la: $(shared_objects_igbinary) $(IGBINARY_SHARED_DEPENDENCIES)
+	$(LIBTOOL) --mode=link $(CC) $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS) $(LDFLAGS) -o $@ -export-dynamic -avoid-version -prefer-pic -module -rpath $(phplibdir) $(EXTRA_LDFLAGS) $(shared_objects_igbinary) $(IGBINARY_SHARED_LIBADD)
+

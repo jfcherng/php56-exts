@@ -1,0 +1,93 @@
+/* config.h.in.  Generated from configure.in by autoheader.  */
+
+/* Whether to build xcache as dynamic module */
+#undef COMPILE_DL_XCACHE
+
+/* Define to 1 if you have the <dlfcn.h> header file. */
+#undef HAVE_DLFCN_H
+
+/* Define to 1 if you have the <inttypes.h> header file. */
+#undef HAVE_INTTYPES_H
+
+/* Define to 1 if you have the <memory.h> header file. */
+#undef HAVE_MEMORY_H
+
+/* Define to 1 if you have the <stdint.h> header file. */
+#undef HAVE_STDINT_H
+
+/* Define to 1 if you have the <stdlib.h> header file. */
+#undef HAVE_STDLIB_H
+
+/* Define to 1 if you have the <strings.h> header file. */
+#undef HAVE_STRINGS_H
+
+/* Define to 1 if you have the <string.h> header file. */
+#undef HAVE_STRING_H
+
+/* Define to 1 if you have the <sys/stat.h> header file. */
+#undef HAVE_SYS_STAT_H
+
+/* Define to 1 if you have the <sys/types.h> header file. */
+#undef HAVE_SYS_TYPES_H
+
+/* Define to 1 if you have the <unistd.h> header file. */
+#undef HAVE_UNISTD_H
+
+/* Define for XCache: (N/A) */
+#undef HAVE_XCACHE_ASSEMBLER
+
+/* Define to enable XCache cacher */
+#undef HAVE_XCACHE_CACHER
+
+/* Define to enable XCache handling of compile time constants */
+#undef HAVE_XCACHE_CONSTANT
+
+/* Define for XCache: Enable code coverage dumper, useful for testing php
+   scripts */
+#undef HAVE_XCACHE_COVERAGER
+
+/* Define for XCache: (N/A) */
+#undef HAVE_XCACHE_DECODER
+
+/* Define for XCache: Enable opcode to php variable dumper, not for server
+   usage */
+#undef HAVE_XCACHE_DISASSEMBLER
+
+/* Define to enable XCache debug print functions */
+#undef HAVE_XCACHE_DPRINT
+
+/* Define for XCache: (N/A) */
+#undef HAVE_XCACHE_ENCODER
+
+/* Define for XCache: (N/A) */
+#undef HAVE_XCACHE_OPTIMIZER
+
+/* Define to enable XCache self test */
+#undef HAVE_XCACHE_TEST
+
+/* Define to 1 if your C compiler doesn't accept -c and -o together. */
+#undef NO_MINUS_C_MINUS_O
+
+/* Define to the address where bug reports for this package should be sent. */
+#undef PACKAGE_BUGREPORT
+
+/* Define to the full name of this package. */
+#undef PACKAGE_NAME
+
+/* Define to the full name and version of this package. */
+#undef PACKAGE_STRING
+
+/* Define to the one symbol short name of this package. */
+#undef PACKAGE_TARNAME
+
+/* Define to the home page for this package. */
+#undef PACKAGE_URL
+
+/* Define to the version of this package. */
+#undef PACKAGE_VERSION
+
+/* Define to 1 if you have the ANSI C header files. */
+#undef STDC_HEADERS
+
+/* Define what modules is built with XCache */
+#undef XCACHE_MODULES

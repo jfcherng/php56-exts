@@ -1,0 +1,148 @@
+// vim:ft=javascript
+
+
+ARG_ENABLE("xcache", "XCache Extension", "no");
+
+if (PHP_XCACHE != "no") {
+	EXTENSION("xcache", "xcache.c", null, "/I " + configure_module_dirname);
+	// {{{ check for xcache-constant 
+	ARG_ENABLE("xcache-constant", "XCache: Handle new constants made by php compiler (e.g.: for __halt_compiler)", "yes");
+	if (PHP_XCACHE_CONSTANT != "no") {
+		AC_DEFINE("HAVE_XCACHE_CONSTANT", 1, "Define to enable XCache handling of compile time constants");
+	}
+	// }}}
+
+	ADD_SOURCES(configure_module_dirname + "/util", " \
+xc_stack.c \
+xc_trace.c \
+", "xcache");
+
+	ADD_SOURCES(configure_module_dirname + "/xcache", " \
+xc_allocator.c \
+xc_allocator_bestfit.c \
+xc_compatibility.c \
+xc_const_string.c \
+xc_extension.c \
+xc_ini.c \
+xc_mutex.c \
+xc_opcode_spec.c \
+xc_processor.c \
+xc_sandbox.c \
+xc_shm.c \
+xc_shm_mmap.c \
+xc_utils.c \
+", "xcache");
+	ADD_SOURCES(configure_module_dirname + "/mod_cacher", " \
+xc_cacher.c \
+", "xcache");
+
+	// {{{ add sources on enabled
+	ARG_ENABLE("xcache-optimizer",    "(N/A)", "no");
+	ARG_ENABLE("xcache-coverager",    "Code coverage dumper, useful for testing php scripts", "no");
+	ARG_ENABLE("xcache-assembler",    "(N/A)", "no");
+	ARG_ENABLE("xcache-disassembler", "Opcode to php variable dumper, not for server usage", "no");
+	ARG_ENABLE("xcache-encoder",      "(N/A)", "no");
+	ARG_ENABLE("xcache-decoder",      "(N/A)", "no");
+
+	var XCACHE_MODULES = "cacher";
+	AC_DEFINE("HAVE_XCACHE_CACHER", 1, "Define for XCache: cacher")
+	var options = ["optimizer",
+	               "coverager",
+	               "assembler", "disassembler",
+	               "encoder", "decoder"];
+	for (var i in options) {
+		var name = options[i];
+		var uname = name.toUpperCase();
+		var withval = eval("PHP_XCACHE_" + uname);
+		if (withval != "no") {
+			ADD_SOURCES(configure_module_dirname + "/mod_" + name, "xc_" + name + ".c", "xcache");
+			XCACHE_MODULES += " " + name;
+			STDOUT.WriteLine("Enabling XCache Module: " + name);
+			AC_DEFINE("HAVE_XCACHE_" + uname, 1, "Define for XCache: " + name)
+		}
+	}
+	AC_DEFINE("XCACHE_MODULES", XCACHE_MODULES);
+	// }}}
+	// {{{ check for programs needed
+	var apps = ["m4", "grep", "sed"];
+	for (var i in apps) {
+		if (!PATH_PROG(apps[i])) {
+			ERROR(apps[i] + " is currently required to build XCache");
+		}
+	}
+	DEFINE("XCACHE_BACKTICK", "`")
+	PATH_PROG("gawk", null, "XCACHE_AWK") || PATH_PROG("awk", null, "XCACHE_AWK");
+
+	// the cygwin indent is known broken on our output
+	var indent = false; // PATH_PROG("indent");
+	if (indent) {
+		indent += " -kr --use-tabs --tab-size 4 -sob -nce";
+	}
+	else {
+		indent = PATH_PROG("cat");
+		if (!indent) {
+			indent = '';
+		}
+	}
+	DEFINE("XCACHE_INDENT", indent);
+	// }}}
+	// {{{ check for xcache-test
+	ARG_ENABLE("xcache-test", "XCache: Self test - FOR DEVELOPERS ONLY!!", "no");
+	if (PHP_XCACHE_TEST != "no") {
+		ADD_FLAG("XCACHE_ENABLE_TEST", "-DXCACHE_ENABLE_TEST");
+		ADD_SOURCES(configure_module_dirname + "/xcache", "xc_malloc.c", "xcache");
+		AC_DEFINE("HAVE_XCACHE_TEST", 1, "Define to enable XCache self test");
+	}
+	else {
+		ADD_FLAG("XCACHE_ENABLE_TEST", "");
+	}
+	// }}}
+	// {{{ check for xcache-test
+	ARG_ENABLE("xcache-dprint", "XCache: Debug print functions - FOR DEVELOPERS ONLY!!", "no");
+	if (PHP_XCACHE_DPRINT != "no") {
+		AC_DEFINE("HAVE_XCACHE_DPRINT", 1, "Define to enable XCache debug print functions");
+	}
+	// }}}
+	// {{{ get ccrule
+	var srcdir = configure_module_dirname;
+	// it's a bit harder to get builddir
+	var mfofile = "Makefile.objects";
+	MFO.Close();
+
+	var mfo = file_get_contents(mfofile);
+	mfo.match(/(.*)\\xcache.obj:/);
+	var builddir = RegExp.$1;
+	mfo.match(/(.*\$\(CC\).* )\/c.*\\xcache.c.*/i);
+	var ccrule = RegExp.$1;
+
+	MFO = FSO.OpenTextFile(mfofile, 8);
+	mfo = null;
+	// }}}
+	// {{{ add make fragments
+	var makefileFrag = srcdir + "\\Makefile.frag";
+	var makefileFragDeps = srcdir + "\\Makefile.frag.deps";
+	STDOUT.WriteLine("Adding Makefile.frag: " + makefileFrag);
+	STDOUT.WriteLine("Adding Makefile.frag.deps: " + makefileFragDeps);
+	var frag = file_get_contents(makefileFrag) + "\r\n" + file_get_contents(makefileFragDeps);
+	frag = frag.replace(/\$\(srcdir\)\//g,   srcdir + '\\');
+	frag = frag.replace(/\$\(srcdir\)/g,     srcdir);
+	frag = frag.replace(/\$\(builddir\)\//g, builddir + '\\');
+	frag = frag.replace(/\$\(builddir\)/g,   builddir);
+	frag = frag.replace(/processor\//g,      "processor\\");
+	frag = frag.replace(/\.lo:/g, ".obj:");
+	frag = frag.replace(/.*\$\(CC\).* -E (.*) -o (.*)/g, ccrule + " /E $1 > $2");
+	frag = frag.replace(/ -o /g, " /Fo");
+	frag = frag.replace(/cp /g, "copy ");
+	frag = frag.replace(/mv /g, "move ");
+	frag = frag.replace(/ \|\| /g, "\r\n\tif errorlevel 1 ");
+	frag = frag.replace(/ && /g, "\r\n\tif not errorlevel 1 ");
+	if (indent == '') {
+		frag = frag.replace(/\| *\$\(XCACHE_INDENT\)/g, '');
+		frag = frag.replace(/\$\(XCACHE_INDENT\) *< */g, 'type ');
+	}
+	MFO.WriteLine(frag);
+	ADD_FLAG("CFLAGS_XCACHE", "/I " + builddir);
+	/// }}}
+	XCACHE_PROC_SOURCES=glob(srcdir + "\\processor\\*.m4").join(' ');
+	ADD_FLAG("XCACHE_PROC_SOURCES", XCACHE_PROC_SOURCES);
+}

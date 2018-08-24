@@ -1,0 +1,52 @@
+#!/bin/sh
+
+getAbsolutePath() {
+	which readlink >/dev/null 2>&1 && readlink -f "$@" || echo "$@"
+}
+
+# use symlink first
+if test -x ./php-cli ; then
+	php_cli=`getAbsolutePath ./php-cli`
+elif test ! -z "$TEST_PHP_EXECUTABLE" && test -x "$TEST_PHP_EXECUTABLE"; then
+	php_cli="$TEST_PHP_EXECUTABLE"
+else
+	php_cli="`which php`"
+fi
+
+if test -x ./php-cgi ; then
+	php_cgi=`getAbsolutePath ./php-cgi`
+else
+	php_cgi="`which php-cgi`"
+fi
+
+TEST_PHP_EXECUTABLE="$php_cli"
+TEST_PHP_CGI_EXECUTABLE="$php_cgi"
+real_php_src=`getAbsolutePath ./php-src`;
+test -z "$TEST_PHP_SRCDIR" && TEST_PHP_SRCDIR=$real_php_src
+
+export TEST_PHP_EXECUTABLE
+export TEST_PHP_CGI_EXECUTABLE
+export TEST_PHP_SRCDIR
+
+echo "XCache test running with:"
+echo "TEST_PHP_CGI_EXECUTABLE: $TEST_PHP_CGI_EXECUTABLE"
+echo "TEST_PHP_EXECUTABLE:     $TEST_PHP_EXECUTABLE"
+echo "TEST_PHP_SRCDIR:         $TEST_PHP_SRCDIR"
+
+patch_run_tests_ext() {
+	if test -z "$TEST_EXT" ; then
+		sed "s#'ext',##g"
+	else
+		cat
+	fi
+}
+patch_run_tests_report_leaks() {
+	if test -z "$TEST_REPORT_MEMLEAKS" ; then
+		sed "s#'report_memleaks=1',#'report_memleaks=0',#g"
+	else
+		cat
+	fi
+}
+run_tests_src=$real_php_src/run-tests.php
+patch_run_tests_ext < "$run_tests_src" | patch_run_tests_report_leaks > run-tests.php
+exec "$php_cli" -d "open_basedir=" -d "safe_mode=0" -d "output_buffering=0" -d "memory_limit=-1" `getAbsolutePath ./run-tests.php` "$@"

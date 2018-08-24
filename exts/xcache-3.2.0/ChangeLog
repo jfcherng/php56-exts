@@ -1,0 +1,294 @@
+3.2.0 2014-09-18
+ChangeLog
+========
+ * cacher:
+   * PHP_5_6 support
+   * fixed #333: reduce memory usage for small or empty files
+   * closes #337: adds warning about Zend OPcache optimization level incompatibility
+
+3.1.2 2014-09-18
+no changes, same as 3.1.1
+
+3.1.1 2014-09-02
+ChangeLog
+========
+ * cacher
+   * compatible with bcompiler
+ * admin
+   * fixed random 24H counters clear. it's a race cached condition. thanks to the report from Per Hansson
+
+3.1.0 2013-10-10
+ChangeLog
+========
+ * added support for PHP_5_5 (cacher, optimizer, disassembler)
+ * cacher:
+   * closed #228: allow using var caching for cli to share data between child processes
+   * compatible with pcntl_fork()
+   * fixed support for __FILE__ __DIR__ to correctly handle files that got moved/hardlinked (this fix is now move out of xcache.experimental)
+ * disassembler:
+   * fixed crash with nested sandbox
+   * improved support for PHP_4 ~ PHP_5_4, also added support for PHP_5_5
+ * admin
+   * make mkpassword.php easier for noob
+ * optimizer
+   * rewrite try/catch handling to fix nested try/catch
+
+3.0.4 2013-10-10
+ChangeLog
+========
+ * cacher
+   * fixed #324: xcache.readonly_protection = Off cause SEGV under mass concurrent
+   * fixed #323: refix locking impl for threaded env
+ * build
+   * win32: fix build with no indent.exe nor cat.exe
+
+3.0.3 2013-06-18
+ChangeLog
+========
+ * clean files in release (fix htdocs config)
+
+3.0.2 2013-06-10
+ChangeLog
+========
+ * cacher:
+   * fixed #296: (PHP5.4+ only bug), racecondition Multiple instances of the same software causes PHP "cannot redeclare class" errors when readonly_protection is not in use
+   * fixed #301: refix locking impl
+   * fixed #307: compatible with Zend Debugger which requires to be installed after Zend Extension Manager
+ * admin
+   * fixed #303: tablesort.js not found in Diagnosis and Coverager
+ * misc
+   * fixed #297: segv on startup under sparc, ini setting overflow
+
+3.0.1 2013-01-11
+ChangeLog
+========
+ * cacher:
+   * fixed crash when cache is too small on start up
+   * fixed #295: crash using traits with PHP 5.4.8+
+   * fix random crash when cache is reinitialized yet failed (Thanks to Brad Baker for generating crash dump)
+   * fix locking impl: improve stability on threaded env (Thanks to Mircea Nicolae for reproducing the bug)
+ * optimizer:
+   * (PHP_5_4) fix ZEND_JMP_SET_VAR
+   * (PHP_5_4) fix for goto
+ * diagnosis:
+   * undefined variable when ini is not found
+ * misc:
+   * fixed #290: workaround phpize vs fbsd make bug again
+   * improve compatibility with "the ionCube PHP Loader", Zend Optimizer
+
+3.0.0 2012-10-29
+API Changes
+========
+ * chg: proto array xcache_clear_cache(int type, [ int id = -1 ]). -1 means all cache splits
+ * new: proto array xcache_enable_cache(int type, [ int id = -1, [ bool enable = true ] ])
+ * new: proto array xcache_admin_namespace()
+ * new: proto array xcache_set_namespace(string namespace)
+
+Ini Settings Changes
+========
+ * new: xcache.disable_on_crash = Off
+ * new: xcache.coverager_autostart = On
+ * new: xcache.allocator = bestfit (no other option value yet)
+ * new: xcache.var_allocator = bestfit (no other option value yet)
+ * new: xcache.var_namespace_mode = 0
+ * new: xcache.var_namespace = ""
+
+ChangeLog
+========
+ * cacher:
+   * closed #2 (auto disable caching on crash)
+   * closed #174 (updated api to support "clear all cache")
+   * closed #198 (support for caching protocol url)
+   * closed #287 (namespace support)
+   * cache can be enabled/disabled manually
+ * coverager:
+   * fixed #39 (ini_set never work for xcache.coverager setting. use API instead)
+ * code refactor
+   * use extension= to load XCache. loading via zend_extension= is unsupported
+   * split XCache features into multiple sub modules
+ * admin:
+   * updated XCache admin page
+   * adds an diagnosis module to give professional advise, accessable via htdocs pages
+ * misc:
+   * (>=PHP_5_3) closed #73 (warn for improper PHP_FCGI_CHILDREN setting fcgi mode)
+
+2.0.1 2012-07-14
+ChangeLog
+========
+ * fixed #279: segv when cache is full (since 2.0)
+ * fixed #281: subsequenc request segv when timeout happens during compiling
+ * admin/ config changed. please update accordingly
+ * WIN32: kill invalidate CRT parameters on shutdown
+ * fixed: <=PHP_5_2 duplicate error message failed to include file
+ * fixed #283: XCache admin APIs (admin page) cause SEGV if XCache failed to initize
+ * fixed possible re-include a file by mixing include/include_once
+ * fixed #264, #284: __FILE__ __DIR__ handling for moved/hardlinked files (set "xcache.experimental = on" to eanble this fix)
+
+2.0.0 2012-04-20
+Ini Settings Changes
+========
+ * new: xcache.experimental = Off
+
+ChangeLog
+========
+ * support for PHP_5_4
+ * reduce memory usage by caching 1 for multiple same content files
+ * correct __FILE__ __DIR__ supported for hardlinked files
+ * fixed #275: one line struct definition was confusing struct parser
+ * fixed #102: segv when var cacher is too small
+ * fixed #55: segv php tokenizer on certain special situation
+ * fixed #278: admin page: wrong layout in opera
+ * compiler errors: all compiler warning (E_STRICT only currently) is now cached and is supported for user handler
+ * tests/bug52160.phpt: report multiple error correctly
+
+1.3.2 2011-06-04
+========
+ * avoid possible filename injection in admin page
+ * adds 30 seconds timeout to "compiling" flag
+ * decompiler: improved decompiling
+ * disassembler: improper handling of null field
+ * disassembler: DECLARE_INHERITED_CLASS/DELAYED class not found
+ * disassembler: don't dump builtin functions
+ * fix win32 build against win32 native gnu tools
+ * compatibility fix: fix segv on shutdown when ionCube Loader is loaded
+ * fixed undefined index for xcache.count=1 and xcache.var_size>1
+ * fixed #258: builtin constant memory leak on compile
+
+1.3.1 2010-11-27
+========
+ * 2G/4G limitation on 64bit arch
+ * xcache_unset matching e.g. prefixed_ values
+
+1.3.0 2009-08-04
+== ChangeLog ==
+ * PHP 5.3 support
+ * fixed #138: no segv if cache is not initialized correctly
+ * default to 64M for xcache.size in xcache.ini
+ * could not show module info in admin page when XCache is the last module
+ * wrong http auth realm
+ * coverager: font-size and newline fix for firefox
+ * admin page is now magic quote gpc aware
+
+1.2.2 2007-12-29
+== ChangeLog ==
+ * added module dependency
+ * live with wrong system time: allow caching files with mtime in further
+ * bug fix for compatibility with Zend Optimizer and other non-cachable
+ * #59: Maximum execution time of 60 seconds exceeded
+ * #102: segv when var cacher is too small
+ * #55: segv php tokenizer on certain special situation
+
+1.2.1 2007-07-01
+== Ini Settings Changes ==
+ * new: xcache.admin.enable_auth = On
+
+== ChangeLog ==
+ * #86: remove/edit variable in admin page
+ * fixed #109: fast inc/dec was trying to break ro protection
+ * fixed #101, #105: Fixed compatibility issue for apache 1.x
+ * fixed #94: Garbage collector disabled when xcache.cacher set to off
+ * fixed #92: Zend Optimizer compatibility issue
+ * fixed #77: hits/misses was not updated
+ * fixed #59: pass by reference for internal function was broken
+ * fixed #56: xcache_set segfaults when xcache.var_size=0
+
+========
+1.2.0 2006-12-10
+Ini Settings Changes
+========
+ * new: xcache.stat = On
+ * new: xcache.coverager =  Off
+ * chg: xcache.coveragedump_directory default to ""
+ * del: xcache.coveragedumper = Off
+
+New APIs
+========
+ * array xcache_coverager_decode(string data)
+ * void  xcache_coverager_start([bool clean = true])
+ * void  xcache_coverager_stop([bool clean = false])
+ * array xcache_coverager_get([bool clean = false])
+
+ChangeLog
+========
+ * [290] [291] [292] build with the m4 on solaris
+ * [283] removed zend_append_version_info. not needed after [282] 
+ * [282] fix possible alloca() scope problem in lock 
+ * [281] keep config.nice on make xcachesvnclean 
+ * [279] fixed #48, was leaking info when cacher is not enabled by size 
+ * [280] [278] trunk: fix coredump on shutdown when loaded as "extension" and after "suhosin" or "zend optimizer". thanks to Alex, Cristian and Esser 
+ * [271] fix auto detection of php-cli/php-cgi for test 
+ * [270] make [269] pass test cases 
+ * [269] do not destruct shallow copied tmp_auto_globals. also improve copying of other hash tables
+ * [268] full compatible with auto_globals_jit, no need to disable it in ini from now on 
+ * [250] fixed css class on switcher
+ * [231] fix zval reference handling
+ * [230] update dprint support, added configure option: --enable-xcache-dprint
+ * [228] more robust coverager
+ * [227] cacher: remove redundant open_basedir check which broke php-src/ext/standard/tests/file/bug24313.phpt 
+ * [221] cacher: fix eleak in op_array non-shadow-copy (readonly_protection=on)
+ * [220] fixed #36, Bug in inherited static class variables
+ * [219] fix prototype for readonly_protection=off, fix testcase Zend/tests/bug37632.phpt 
+ * [217] kill leak warning on debug build
+ * [216] avoid crash on php compiler error
+ * [215] add `make xcachetest` to run xcache enabled test
+ * [214] [212] fixed #41, early class binding
+ * [272] [267] [263] [200] fixes for php6
+ * [224] [193] kill 64bit warning when self test is enabled 
+ * [190] trick to load and work with zend optimizer 
+ * [189] call op_array_ctor handler on restore to be more compatible with other zend_extension 
+ * [257] [183] xcache module is not required by coverage viewer any more
+ * [165] xcache.stat support to allow tuning off stat (new ini)
+ * [164] better way to handle system level ini settings so it can be display in phpinfo standardly
+
+1.1.0 2006-11-11
+ * merged [254] fix xcache.var_ttl displaying in info, fix xcache_get for ttl-unlimited
+ * merged [250] admin: fix switcher class on active
+ * merged [249] return 0 s instead of empty for deltatime
+ * merged [201] coverager: avoid crash when upstream failed to compile file
+ * merged from trunk: 159,161-162,167-180,182,184,186-187,194
+   * [194] PHP_5_2: new element in zend_brk_cont_element
+   * [186] [187] fix build on some rare arch
+   * [184] fix tplcov
+   * [178] fix type processor_t conflict with Mac OS X
+ * remove redundant open_basedir check, it's done before compiling
+ * trick in_compilation state, don't trigger __autoload at compile time
+ * FIX conflict between sandbox and user error handler 
+ * [154] fix segv on MSHUTDOWN
+ * [153] win32/vc build fix
+ * [150] avoid crash when OOM on mem_realloc
+ * [148] reconstruct shm/allocator
+ * [147] show module info in statistics page
+ * [146] avoid reading of uninitialized data. thanks to valgrind
+ * [144] compat size displaying in admin page func
+ * [143] fixed string parameter parsing arg type for disassembler functions. thanks to check_paramaters.php
+ * [141] fix cache clear corruption bug
+ * [140] fix refcount on cache #1 #2 …
+ * [133] admin-page: be more friendly if XCache isn't loaded
+ * [132] fix zts on calling destroy_op_array
+ * [131] move open_files out of sandbox, it's not needed
+ * [130] improve locking for compile
+ * [137] [138] changed the coding way of unlinking list. fixed ttl expires dead loop
+ * [114] gc expired items, new ini: xcache.ttl xcache.gc_interval xcache.var_ttl …
+ * [126] fix xcache_isset reported by http://forum.lighttpd.net/topic/1397
+ * [119] fix leak in xcache.test=1; XCACHE_VERSION/XCACHE_MODULES length off-by-one
+ * [118] show gc countdown in admin page
+ * [113] zts build fix
+ * [112] avoid crash when OOM on mem_(calloc|realloc|strndup)
+ * [108] update percent bar to vertical/avail
+ * [107] show XCache version in admin page
+ * [105] trigger jit on $_SERVER when needed
+ * [101] note: xcache.mmap_path is a file
+ * [100] FIX: alloc'ed wrong size for string on restore
+ * [99]  sohosin compatible & TSRM fix.
+ * [96]  remove tailing \0 in filename of administration html output. reported by …
+ * [94]  PHP_5_2: __tostring cache was MFH by php
+ * [93]  try to show both count/size assert before abort
+ * [92]  PHP_5_2: auto module_global is maintained by php engine
+ * [90] [91] kill compiler warnings
+ * [87]  XCACHE_INDENT fallback
+ * [84]  handle without inodes
+ * [79]  fix messy XCACHE_MAP_FAILED checking
+ * [78]  catch up with PHP_5_2, zend_property_info.ce
+ * [77]  leakcheck
+
+ (not all changesets is list here)

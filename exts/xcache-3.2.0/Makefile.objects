@@ -1,0 +1,40 @@
+xcache.lo: /root/software/php/php5/xcache-3.2.0/xcache.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache.c -o xcache.lo 
+util/xc_stack.lo: /root/software/php/php5/xcache-3.2.0/util/xc_stack.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/util/xc_stack.c -o util/xc_stack.lo 
+util/xc_trace.lo: /root/software/php/php5/xcache-3.2.0/util/xc_trace.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/util/xc_trace.c -o util/xc_trace.lo 
+xcache/xc_allocator.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_allocator.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_allocator.c -o xcache/xc_allocator.lo 
+xcache/xc_allocator_bestfit.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_allocator_bestfit.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_allocator_bestfit.c -o xcache/xc_allocator_bestfit.lo 
+xcache/xc_compatibility.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.c -o xcache/xc_compatibility.lo 
+xcache/xc_const_string.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string.c -o xcache/xc_const_string.lo 
+xcache/xc_extension.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_extension.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_extension.c -o xcache/xc_extension.lo 
+xcache/xc_ini.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_ini.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_ini.c -o xcache/xc_ini.lo 
+xcache/xc_mutex.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.c -o xcache/xc_mutex.lo 
+xcache/xc_opcode_spec.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_opcode_spec.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_opcode_spec.c -o xcache/xc_opcode_spec.lo 
+xcache/xc_processor.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_processor.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_processor.c -o xcache/xc_processor.lo 
+xcache/xc_sandbox.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_sandbox.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_sandbox.c -o xcache/xc_sandbox.lo 
+xcache/xc_shm.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.c -o xcache/xc_shm.lo 
+xcache/xc_shm_mmap.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_shm_mmap.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_shm_mmap.c -o xcache/xc_shm_mmap.lo 
+xcache/xc_utils.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.c -o xcache/xc_utils.lo 
+mod_cacher/xc_cacher.lo: /root/software/php/php5/xcache-3.2.0/mod_cacher/xc_cacher.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/xcache-3.2.0/mod_cacher/xc_cacher.c -o mod_cacher/xc_cacher.lo 
+$(phplibdir)/xcache.la: ./xcache.la
+	$(LIBTOOL) --mode=install cp ./xcache.la $(phplibdir)
+
+./xcache.la: $(shared_objects_xcache) $(XCACHE_SHARED_DEPENDENCIES)
+	$(LIBTOOL) --mode=link $(CC) $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS) $(LDFLAGS) -o $@ -export-dynamic -avoid-version -prefer-pic -module -rpath $(phplibdir) $(EXTRA_LDFLAGS) $(shared_objects_xcache) $(XCACHE_SHARED_LIBADD)
+

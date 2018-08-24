@@ -1,0 +1,400 @@
+#!/bin/bash
+# this script is for developers only
+
+set -e
+MAKE=/usr/bin/make
+
+true() { # {{{1
+	return 0
+}
+
+hi() { # {{{1
+	colors=(4 2 3 5 6 7 8 9)
+	re=()
+	i=0
+	for r in "$@"; do
+		((color=$i % ${#colors[@]})) || true
+		color=${colors[$color]}
+		r="${r/\#/\\#}"
+		r="s#$r#[4${color}m[31m\0[0m#g"
+		re[$i]="-e$r"
+		((i=i+1))
+	done
+	sed -ur "${re[@]}"
+}
+hiecho() { # {{{1
+	echo "[32m""$@""[0m"
+}
+
+# }}}
+
+stopfpm() { # {{{1
+	if [[ -f $1 ]]; then
+		local pid=`cat $1 2>/dev/null || true`
+		if [[ $pid -gt 0 ]]; then
+			hiecho Stopping fpm $pid @ $1
+			kill $pid || true
+		fi
+	fi
+}
+
+xtest() { # {{{1
+	$MAKE ${MAKEOPTS} -f devel/test.mak
+}
+
+prep() { # {{{1
+	$MAKE ${MAKEOPTS} -f devel/prepare.mak "$@"
+}
+
+mergepo() { # {{{1
+	prep
+	local i
+	find htdocs -iname '*.po' | while read -r i; do
+		if [[ -f $i-merged ]]; then
+			mv $i-merged $i
+		fi
+	done
+}
+
+po2php() { # {{{1
+	mergepo
+
+	local phpfile
+	find htdocs -iname '*.po' | while read -r i; do
+		phpfile=${i/.po/.php}
+		devel/po2php.awk < $i > $phpfile.tmp
+		mv $phpfile.tmp $phpfile
+	done
+}
+
+updatedeps() { # {{{1
+	pwd=$(readlink -f "$(pwd)")
+	builddir=$(readlink -f ../trunk-php5-debug-zts)
+	if [[ -z $builddir ]]; then
+		hiecho required ../trunk-php5-debug-zts not found
+		return 1
+	fi
+	find . -iname \*.c | LANG=C sort | while read -r sourceFile; do
+		sourceFile=${sourceFile#./}
+		{
+			case "$sourceFile" in
+			includes.c)
+				echo '$(XCACHE_INCLUDES_I)'
+				;;
+			esac
+			echo ${sourceFile%.c}.lo '$(builddir)/'${sourceFile%.c}.lo:
+			hiecho "Checking $sourceFile ..." >&2
+			for dependency in $(gcc -DHAVE_XCACHE_TEST -DHAVE_XCACHE_DPRINT -DXCACHE_DEBUG -MM $sourceFile -I$PHPSDIR/$phpbasename/include/php/{,main,Zend,TSRM} -I. -I${builddir} -MG | sed 's#.*:##g' | sed 's#\\##g'); do
+				dependency=$(readlink -f "$dependency")
+				case "$dependency" in
+				$pwd/*)
+					dependency=${dependency#$pwd/}
+					;;
+				$builddir/*)
+					dependency="\$(builddir)/"${dependency#$builddir/}
+					;;
+				esac
+
+				case "$dependency" in
+				*xc_const_string_opcodes_php*)
+					for dependency in xcache/xc_const_string_*.h; do
+						echo '$(srcdir)/'$dependency
+					done
+					;;
+
+				/*) ;;
+				$sourceFile) ;;
+
+				xc_processor.h|\$\(builddir\)/xc_processor.h)
+					echo '$(XCACHE_PROC_H)'
+					;;
+				xc_processor.c.h|\$\(builddir\)/xc_processor.c.h)
+					echo '$(XCACHE_PROC_C)'
+					;;
+				*)
+					if [[ -r $dependency ]]; then
+						echo '$(srcdir)/'$dependency
+					else
+						hiecho "$dependency not found" >&2
+					fi
+				esac
+			done | LANG=C sort | uniq
+		} | xargs
+	done > Makefile.frag.deps
+}
+# }}}1
+
+hiecho "Loading config devel/run.cfg"
+. devel/run.cfg
+PHPSDIR=${PHPSDIR:-$HOME/test}
+
+if [[ $# -eq 0 ]]; then
+	set -- "${args[@]}"
+fi
+
+basename=$(basename $(pwd))
+case "$basename" in
+*-*)
+	# in build dir, starts from src dir
+	dirs="${basename#*-}"
+	xcachesrcdir=../${basename%%-*}
+	cd $xcachesrcdir
+	;;
+*)
+	# in src dir
+	dirs=${dirs:-php5-debug-zts}
+	xcachesrcdir=../$basename
+	;;
+esac
+
+touch devel.pid
+svn propget svn:ignore . > .svnignore
+
+# ==========================
+
+do_phpize() { # {{{1
+	if [[ ! -x $PHPSDIR/$phpbasename/bin/phpize ]]; then
+		hiecho $PHPSDIR/$phpbasename/bin/phpize not found
+		exit
+	fi
+	export PATH=$PHPSDIR/$phpbasename/bin:$PATH
+	local pedantic=
+	case $phpbasename in
+	php5|php5.4) pedantic=-pedantic-errors;;
+	*) pedantic=-pedantic;;
+	esac
+	phpize --clean \
+	&& phpize \
+	&& CFLAGS="$CFLAGS -g -O0 $pedantic -Wno-variadic-macros -Wno-long-long -Wall -Wno-unused-parameter -Wno-unused-function -W -Wshadow -Werror=implicit-function-declaration -std=c89 -D_GNU_SOURCE -D_POSIX_SOURCE -Dinline=" ./configure \
+		--enable-xcache-cacher \
+		--enable-xcache-optimizer \
+		--enable-xcache-encoder \
+		--enable-xcache-decoder \
+		--enable-xcache-disassembler \
+		--enable-xcache-assembler \
+		--enable-xcache-coverager \
+		--enable-xcache-test \
+		--enable-xcache-dprint \
+		--enable-xcache-constant
+}
+do_make() { # {{{1
+	if [[ ! -f Makefile ]]; then
+		do_phpize
+	fi
+	LANG=C $MAKE $MAKEOPTS "$@" 2>&1 \
+	| sed -ur \
+		-e 's#Werror=implicit-function-declaration#We/rror=i/mplicit-function-declaration#' \
+		-e 's#-pedantic-errors#-pedantic-e/rrors#' \
+		-e 's#\./xc_processor\.h#'$PWD'/xc_processor.h#' \
+		-e 's#\./xc_processor\.c\.h#'$PWD'/xc_processor.c.h#' \
+	| hi error implicit warn FAIL
+	ret=${PIPESTATUS[0]}
+	if [[ $ret -ne 0 ]]; then
+		exit $ret
+	fi
+}
+cleanfpm() { # {{{1
+	echo
+	stopfpm $pidfile
+}
+# }}}
+run() {
+	pidfile=$xcachesrcdir/devel.pid
+
+	# prepare {{{1
+	case "$1" in
+	phpize)
+		if [[ -r Makefile ]]; then
+			$MAKE $MAKEOPTS xcachesvnclean || true
+		fi
+		;;
+	esac
+
+	rm -f php-src
+	find -L . -type d -print0 | xargs -0 rmdir -p 2>/dev/null || true
+	find -L . -type l -print0 | xargs -0 rm -fv
+	lndir "$xcachesrcdir" >/dev/null || true
+	find . -iname .\*.swp -print0 | xargs -0 rm -f
+	ln -snf ~/src/php/${phpbasename%%-*} php-src
+	for i in ~/src/php/$phpbasename/sapi/cgi/php{,-cgi}; do
+		if [[ -r $i ]]; then
+			ln -snf "$i" php-cgi
+		fi
+	done
+	ln -snf ~/src/php/$phpbasename/sapi/cli/php php-cli
+	f=~/src/php/$phpbasename/sapi/cli/php; [ -f "$f" ] && ln -snf "$f" php-cli
+	f=~/src/php/$phpbasename/sapi/fpm/php-fpm; [ -f "$f" ] && ln -snf "$f" php-fpm
+
+	case "$1" in
+	phpize) do_phpize; return $?;;
+	make) shift; do_make "$@"; return $?;;
+	*) do_make;;
+	esac
+	# }}}1
+
+	if [[ -z $1 ]]; then
+		set -- devel/sample.cpp.php
+	fi
+
+	cmd=()
+	phpApp=()
+	tracer=()
+
+	# run utils {{{1
+	case "$1" in
+	retest)
+		shift
+		lastResult=$(ls php_test_results_*.txt | LANG=C sort | tail -n1)
+		$MAKE $MAKEOPTS xcachetest "$@" TESTS="$(grep '^/.*\.phpt$' $lastResult | uniq | xargs)"
+		return
+		;;
+	test)
+		shift
+		case "$1" in
+		*.phpt)
+			$MAKE $MAKEOPTS xcachetest TEST_ARGS=-v TESTS="$*"
+			return
+			;;
+		*/)
+			$MAKE $MAKEOPTS xcachetest TESTS="$*"
+			return
+			;;
+		*)
+			$MAKE $MAKEOPTS xcachetest
+			return
+			;;
+		esac
+		;;
+	esac
+	# }}}
+	# pick tracer {{{1
+	case "$1" in
+	ltr*)
+		shift
+		export USE_ZEND_ALLOC=0
+		tracer=(ltrace -s1024 -e malloc,realloc,free,write)
+		;;
+	str*)
+		shift
+		tracer=(strace -s1024 -T)
+		;;
+	gdb)
+		shift
+		#USE_ZEND_ALLOC=0
+		tracer=(gdb --args)
+		;;
+	val*)
+		shift
+		export USE_ZEND_ALLOC=0
+		export ZEND_DONT_UNLOAD_MODULES=1
+		tracer=(valgrind -v --gen-suppressions=all)
+		;;
+	esac
+
+	# pick sapi {{{1
+	case "$phpbasename" in
+	*-apache1*)
+		cmd=($HOME/apache1/bin/httpd -X)
+		;;
+	*-apache*)
+		echo "Don't know how to run apache"
+		exit 1
+		;;
+	*)
+		case "$1" in
+		dc)
+			shift
+			cmd=(./php-cli -c devel.ini)
+			phpApp=(./bin/phpdc.phpr)
+			;;
+		dop)
+			shift
+			cmd=(./php-cli -c devel.ini)
+			phpApp=(./bin/phpdop.phpr)
+			;;
+		fcgi)
+			shift
+			cmd=(./php-cgi -q -c devel.ini)
+			set -- -b 1026
+			;;
+		fpm)
+			shift
+			cmd=(./php-fpm -c devel.ini -y devel.fpm -g $(readlink -f $pidfile))
+			set --
+			;;
+		*)
+			cmd=(./php-cgi -q -c devel.ini)
+			;;
+		esac
+
+		"${cmd[@]}" -v || true
+	esac
+
+	# hack sample.cpp.php {{{1
+	case "$1" in
+	*.cpp.php)
+		< "$1" \
+		sed -r -e 's#__#____#g' \
+		| cpp -C -P -traditional-cpp -DPHP_VERSION=$phpVersion \
+		| sed -r -e 's#^ +##g' -e 's#\t +#\t#g' -e 's#____#__#g' > devel.php || exit $?
+		shift
+		set -- devel.php "$@"
+		;;
+	esac
+
+	# run {{{1
+	set -- "${tracer[@]}" "${cmd[@]}" "${phpApp[@]}" "$@"
+
+	case "${cmd[0]}" in
+	*php-fpm*)
+		stopfpm
+		hiecho Starting fpm "$@" ...
+		"$@" | tee output.php
+		echo -n "Ctrl-C to stop"
+		trap cleanfpm SIGINT SIGTERM exit
+		cat > /dev/null || true
+		stopfpm
+		return
+		;;
+	*)
+		hiecho "$@"
+		case "${tracer[@]}" in
+		gdb*|val*)
+			"$@"
+			;;
+		*)
+			"$@" | tee output.php
+			;;
+		esac
+		;;
+	esac
+	# }}}
+}
+
+for phpbasename in "${dirs[@]}"; do
+	phpVersion=${phpbasename%%-*}
+	phpVersion=${phpVersion##php}
+	phpVersion=${phpVersion/./}
+	case "$phpVersion" in
+	??) phpVersion="${phpVersion}0";;
+	?) phpVersion="${phpVersion}00";;
+	esac
+
+	# devel actions
+	case "$1" in
+	prep*) shift; prep "$@"; exit;;
+	tags) shift; rm -f tags; prep tags "$@"; exit;;
+	po2php) po2php; exit;;
+	mergepo) mergepo; exit;;
+	dep*) updatedeps; exit;;
+	xtest) xtest; exit;;
+	stopfpm) stopfpm devel.pid; exit;;
+	esac
+
+	mkdir -p ${xcachesrcdir}-${phpbasename}
+	cd ${xcachesrcdir}-${phpbasename} || exit
+	lndir ${xcachesrcdir} >/dev/null || true
+
+	pwd
+	run "$@"
+done

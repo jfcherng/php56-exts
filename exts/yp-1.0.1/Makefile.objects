@@ -1,0 +1,8 @@
+yp.lo: /root/software/php/php5/exts/yp-1.0.1/yp.c
+	$(LIBTOOL) --mode=compile $(CC)  -I. -I/root/software/php/php5/exts/yp-1.0.1 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS)  -c /root/software/php/php5/exts/yp-1.0.1/yp.c -o yp.lo 
+$(phplibdir)/yp.la: ./yp.la
+	$(LIBTOOL) --mode=install cp ./yp.la $(phplibdir)
+
+./yp.la: $(shared_objects_yp) $(YP_SHARED_DEPENDENCIES)
+	$(LIBTOOL) --mode=link $(CC) $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS) $(LDFLAGS) -o $@ -export-dynamic -avoid-version -prefer-pic -module -rpath $(phplibdir) $(EXTRA_LDFLAGS) $(shared_objects_yp) $(YP_SHARED_LIBADD)
+

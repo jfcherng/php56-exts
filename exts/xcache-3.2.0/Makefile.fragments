@@ -1,0 +1,62 @@
+XCACHE_PROC_SRC=/root/software/php/php5/xcache-3.2.0/processor/main.m4
+XCACHE_PROC_OUT=./processor.out.c
+XCACHE_PROC_C=./xc_processor.c.h
+XCACHE_PROC_H=./xc_processor.h
+XCACHE_INCLUDES_SRC=/root/software/php/php5/xcache-3.2.0/includes.c
+XCACHE_INCLUDES_I=./includes.i
+XCACHE_STRUCTINFO_OUT=./structinfo.m4
+
+$(XCACHE_INCLUDES_I):
+	$(CC) -I. -I/root/software/php/php5/xcache-3.2.0 $(COMMON_FLAGS) $(CFLAGS_CLEAN) $(EXTRA_CFLAGS) -E $(XCACHE_INCLUDES_SRC) -o $(XCACHE_INCLUDES_I)
+
+$(XCACHE_STRUCTINFO_OUT): $(XCACHE_INCLUDES_I) /root/software/php/php5/xcache-3.2.0/gen_structinfo.awk
+	@echo $(XCACHE_STRUCTINFO_OUT) is optional if XCache test is not enabled, feel free if it awk failed to produce it
+	-$(XCACHE_AWK) -f /root/software/php/php5/xcache-3.2.0/gen_structinfo.awk < $(XCACHE_INCLUDES_I) > $(XCACHE_STRUCTINFO_OUT).tmp && mv $(XCACHE_STRUCTINFO_OUT).tmp $(XCACHE_STRUCTINFO_OUT)
+
+$(XCACHE_PROC_OUT): $(XCACHE_PROC_SRC) $(XCACHE_STRUCTINFO_OUT) $(XCACHE_PROC_SOURCES)
+	$(M4) -D srcdir=$(XCACHE_BACKTICK)"/root/software/php/php5/xcache-3.2.0'" -D builddir=$(XCACHE_BACKTICK)".'" $(XCACHE_ENABLE_TEST) $(XCACHE_PROC_SRC) > $(XCACHE_PROC_OUT).tmp
+	mv $(XCACHE_PROC_OUT).tmp $(XCACHE_PROC_OUT)
+
+$(XCACHE_PROC_H): $(XCACHE_PROC_OUT)
+	$(GREP) "export: " $(XCACHE_PROC_OUT) | $(SED) "s/.*export:\(.*\):export.*/\1/g" > $(XCACHE_PROC_H)
+	-$(XCACHE_INDENT) < $(XCACHE_PROC_H) > $(XCACHE_PROC_H).tmp && mv $(XCACHE_PROC_H).tmp $(XCACHE_PROC_H)
+
+$(XCACHE_PROC_C): $(XCACHE_PROC_OUT) $(XCACHE_PROC_H)
+	cp $(XCACHE_PROC_OUT) $(XCACHE_PROC_C)
+	-$(XCACHE_INDENT) < $(XCACHE_PROC_OUT) > $(XCACHE_PROC_C).tmp && mv $(XCACHE_PROC_C).tmp $(XCACHE_PROC_C)
+
+xcachesvnclean: clean
+	-svn propget svn:ignore . > .svnignore.tmp 2>/dev/null && mv .svnignore.tmp .svnignore
+	cat .svnignore | grep -v devel | grep -v svnignore | grep -v ^Makefile | grep -v ^config.nice | xargs rm -rf
+
+xcachetest: all
+	$(SED) "s#\\./\\.libs/#$(top_builddir)/\\.libs/#" < /root/software/php/php5/xcache-3.2.0/xcache-test.ini > $(top_builddir)/tmp-php.ini
+	if test -z "$(TESTS)"; then \
+		TEST_PHP_SRCDIR=/root/software/php/php5/xcache-3.2.0 /root/software/php/php5/xcache-3.2.0/run-xcachetest $(TEST_ARGS) -c $(top_builddir)/tmp-php.ini; \
+	fi
+	/root/software/php/php5/xcache-3.2.0/run-xcachetest $(TESTS) $(TEST_ARGS) -c $(top_builddir)/tmp-php.ini
+$(XCACHE_INCLUDES_I) includes.lo ./includes.lo: /root/software/php/php5/xcache-3.2.0/mod_cacher/xc_cache.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.h
+mod_assembler/xc_assembler.lo ./mod_assembler/xc_assembler.lo:
+mod_cacher/xc_cacher.lo ./mod_cacher/xc_cacher.lo: /root/software/php/php5/xcache-3.2.0/mod_cacher/xc_cache.h /root/software/php/php5/xcache-3.2.0/mod_cacher/xc_cacher.h /root/software/php/php5/xcache-3.2.0/util/xc_align.h /root/software/php/php5/xcache-3.2.0/util/xc_stack.h /root/software/php/php5/xcache-3.2.0/util/xc_trace.h /root/software/php/php5/xcache-3.2.0/util/xc_vector.h /root/software/php/php5/xcache-3.2.0/xcache_globals.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_extension.h /root/software/php/php5/xcache-3.2.0/xcache/xc_ini.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_sandbox.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.h $(XCACHE_PROC_H)
+mod_coverager/xc_coverager.lo ./mod_coverager/xc_coverager.lo: /root/software/php/php5/xcache-3.2.0/mod_coverager/xc_coverager.h /root/software/php/php5/xcache-3.2.0/util/xc_stack.h /root/software/php/php5/xcache-3.2.0/util/xc_trace.h /root/software/php/php5/xcache-3.2.0/xcache_globals.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_extension.h /root/software/php/php5/xcache-3.2.0/xcache/xc_ini.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.h
+mod_decoder/xc_decoder.lo ./mod_decoder/xc_decoder.lo:
+mod_disassembler/xc_disassembler.lo ./mod_disassembler/xc_disassembler.lo: /root/software/php/php5/xcache-3.2.0/mod_disassembler/xc_disassembler.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_ini.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_sandbox.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.h $(XCACHE_PROC_H)
+mod_encoder/xc_encoder.lo ./mod_encoder/xc_encoder.lo:
+mod_optimizer/xc_optimizer.lo ./mod_optimizer/xc_optimizer.lo: /root/software/php/php5/xcache-3.2.0/mod_optimizer/xc_optimizer.h /root/software/php/php5/xcache-3.2.0/util/xc_stack.h /root/software/php/php5/xcache-3.2.0/util/xc_trace.h /root/software/php/php5/xcache-3.2.0/xcache_globals.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string.h /root/software/php/php5/xcache-3.2.0/xcache/xc_extension.h /root/software/php/php5/xcache-3.2.0/xcache/xc_ini.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_opcode_spec.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.h $(XCACHE_PROC_H)
+util/xc_stack.lo ./util/xc_stack.lo: /root/software/php/php5/xcache-3.2.0/util/xc_stack.h /root/software/php/php5/xcache-3.2.0/util/xc_trace.h
+util/xc_trace.lo ./util/xc_trace.lo: /root/software/php/php5/xcache-3.2.0/util/xc_trace.h
+xcache.lo ./xcache.lo: /root/software/php/php5/xcache-3.2.0/util/xc_foreachcoresig.h /root/software/php/php5/xcache-3.2.0/util/xc_stack.h /root/software/php/php5/xcache-3.2.0/xcache_globals.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string.h /root/software/php/php5/xcache-3.2.0/xcache/xc_extension.h /root/software/php/php5/xcache-3.2.0/xcache/xc_ini.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_opcode_spec.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.h $(XCACHE_PROC_H)
+xcache/xc_allocator_bestfit.lo ./xcache/xc_allocator_bestfit.lo: /root/software/php/php5/xcache-3.2.0/util/xc_align.h /root/software/php/php5/xcache-3.2.0/util/xc_trace.h /root/software/php/php5/xcache-3.2.0/xcache/xc_allocator.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h
+xcache/xc_allocator.lo ./xcache/xc_allocator.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_allocator.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h
+xcache/xc_compatibility.lo ./xcache/xc_compatibility.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h
+xcache/xc_const_string.lo ./xcache/xc_const_string.lo: /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string_opcodes_php4.x.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string_opcodes_php5.0.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string_opcodes_php5.1.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string_opcodes_php5.2.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string_opcodes_php5.3.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string_opcodes_php5.4.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string_opcodes_php5.5.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string_opcodes_php6.x.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h
+xcache/xc_extension.lo ./xcache/xc_extension.lo: /root/software/php/php5/xcache-3.2.0/util/xc_stack.h /root/software/php/php5/xcache-3.2.0/util/xc_trace.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_extension.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h
+xcache/xc_ini.lo ./xcache/xc_ini.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_ini.h
+xcache/xc_malloc.lo ./xcache/xc_malloc.lo: /root/software/php/php5/xcache-3.2.0/util/xc_align.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_allocator.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h
+xcache/xc_mutex.lo ./xcache/xc_mutex.lo: /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h
+xcache/xc_opcode_spec.lo ./xcache/xc_opcode_spec.lo: /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_const_string.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_opcode_spec_def.h /root/software/php/php5/xcache-3.2.0/xcache/xc_opcode_spec.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h
+xcache/xc_processor.lo ./xcache/xc_processor.lo: $(XCACHE_PROC_C)
+xcache/xc_sandbox.lo ./xcache/xc_sandbox.lo: /root/software/php/php5/xcache-3.2.0/util/xc_stack.h /root/software/php/php5/xcache-3.2.0/xcache_globals.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_sandbox.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.h
+xcache/xc_shm.lo ./xcache/xc_shm.lo: /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h
+xcache/xc_shm_mmap.lo ./xcache/xc_shm_mmap.lo: /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.h
+xcache/xc_utils.lo ./xcache/xc_utils.lo: /root/software/php/php5/xcache-3.2.0/util/xc_stack.h /root/software/php/php5/xcache-3.2.0/util/xc_trace.h /root/software/php/php5/xcache-3.2.0/xcache_globals.h /root/software/php/php5/xcache-3.2.0/xcache.h /root/software/php/php5/xcache-3.2.0/xcache/xc_compatibility.h /root/software/php/php5/xcache-3.2.0/xcache/xc_mutex.h /root/software/php/php5/xcache-3.2.0/xcache/xc_opcode_spec.h /root/software/php/php5/xcache-3.2.0/xcache/xc_shm.h /root/software/php/php5/xcache-3.2.0/xcache/xc_utils.h
