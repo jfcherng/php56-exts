@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-THREAD_CNT=$(nproc --all)
+THREAD_CNT=$(getconf _NPROCESSORS_ONLN)
 
 
 #----------------#
 # configurations #
 #----------------#
 
-php_install_dir=/usr/local/php56
+php_install_dir="/usr/local/php56"
 
 
 #----------------------#
@@ -33,7 +33,8 @@ for ext_dir in */; do
 
     ${PHPIZE}
     ./configure --with-php-config="${PHP_CONFIG}"
-    make -j"${THREAD_CNT}" && make install && make clean
+    make -j"${THREAD_CNT}" && make install
+    make clean
 
     popd || exit
 done
