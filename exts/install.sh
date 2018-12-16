@@ -34,7 +34,11 @@ for ext_dir in */; do
     ${PHPIZE}
     ./configure --with-php-config="${PHP_CONFIG}"
     make -j"${THREAD_CNT}" && make install
+
+    "${phpize}" --clean
     make clean
+    git clean -dfx
+    git checkout -- .
 
     popd || exit
 done
