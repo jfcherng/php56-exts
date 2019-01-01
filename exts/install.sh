@@ -30,6 +30,13 @@ pushd "${SCRIPT_DIR}" || exit
 
 for ext_dir in */; do
     pushd "${ext_dir}" || exit
+    echo "[BEGIN][${ext_dir}] ..."
+
+    if [ ! -f "config.m4" ]; then
+        echo "[SKIP][${ext_dir}] Cannot find 'config.m4'..."
+
+        continue
+    fi
 
     ${PHPIZE}
     ./configure --with-php-config="${PHP_CONFIG}"
@@ -40,7 +47,18 @@ for ext_dir in */; do
     git clean -dfx
     git checkout -- .
 
+    echo "[END][${ext_dir}] ..."
     popd || exit
 done
+
+pushd cphalcon*/build || exit
+echo "[BEGIN][Phalcon] ..."
+
+yum install -y re2c
+
+./install --phpize "${PHPIZE}" --php-config "${PHP_CONFIG}"
+
+echo "[END][Phalcon] ..."
+popd || exit
 
 popd || exit
