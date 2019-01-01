@@ -28,7 +28,7 @@ test -f "${PHP_CONFIG}" || (echo "${PHP_CONFIG} not found" && exit)
 
 pushd "${SCRIPT_DIR}" || exit
 
-for ext_dir in */; do
+for ext_dir in exts/*/; do
     pushd "${ext_dir}" || exit
     echo "[BEGIN][${ext_dir}] ..."
 
@@ -51,14 +51,8 @@ for ext_dir in */; do
     popd || exit
 done
 
-pushd cphalcon*/build || exit
-echo "[BEGIN][Phalcon] ..."
-
-yum install -y re2c
-
-./install --phpize "${PHPIZE}" --php-config "${PHP_CONFIG}"
-
-echo "[END][Phalcon] ..."
-popd || exit
+for script in exts-special/*.sh; do
+    "./${script}"
+done
 
 popd || exit
