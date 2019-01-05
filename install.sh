@@ -42,7 +42,7 @@ for ext_dir in exts/*/; do
     ./configure --with-php-config="${PHP_CONFIG}"
     make -j"${THREAD_CNT}" && make install
 
-    "${phpize}" --clean
+    "${PHPIZE}" --clean
     make clean
 
     echo "[END][${ext_dir}] ..."
