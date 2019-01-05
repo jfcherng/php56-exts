@@ -28,29 +28,19 @@ test -f "${PHP_CONFIG}" || (echo "${PHP_CONFIG} not found" && exit)
 
 pushd "${SCRIPT_DIR}" || exit
 
-for ext_dir in exts/*/; do
-    pushd "${ext_dir}" || exit
-    echo "[BEGIN][${ext_dir}] ..."
+pushd imagick*/ || exit
+echo "[BEGIN][Imagick] ..."
 
-    if [ ! -f "config.m4" ]; then
-        echo "[SKIP][${ext_dir}] Cannot find 'config.m4'..."
+yum install -y ImageMagick ImageMagick-devel ImageMagick-perl
 
-        continue
-    fi
+${PHPIZE}
+./configure --with-php-config="${PHP_CONFIG}"
+make -j"${THREAD_CNT}" && make install
 
-    ${PHPIZE}
-    ./configure --with-php-config="${PHP_CONFIG}"
-    make -j"${THREAD_CNT}" && make install
+"${PHPIZE}" --clean
+make clean
 
-    "${phpize}" --clean
-    make clean
-
-    echo "[END][${ext_dir}] ..."
-    popd || exit
-done
-
-for script in exts-special/*.sh; do
-    "./${script}"
-done
+echo "[END][Imagick] ..."
+popd || exit
 
 popd || exit
