@@ -39,6 +39,7 @@ make -j"${THREAD_CNT}" && make install
 
 "${PHPIZE}" --clean
 make clean
+git checkout -- .
 
 echo "[END][Imagick] ..."
 popd || exit

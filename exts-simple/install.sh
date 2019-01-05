@@ -28,16 +28,26 @@ test -f "${PHP_CONFIG}" || (echo "${PHP_CONFIG} not found" && exit)
 
 pushd "${SCRIPT_DIR}" || exit
 
-pushd cphalcon*/build || exit
-echo "[BEGIN][Phalcon] ..."
+for ext_dir in */; do
+    pushd "${ext_dir}" || exit
+    echo "[BEGIN][${ext_dir}] ..."
 
-yum install -y re2c
+    if [ ! -f "config.m4" ]; then
+        echo "[SKIP][${ext_dir}] Cannot find 'config.m4'..."
 
-./install --phpize "${PHPIZE}" --php-config "${PHP_CONFIG}"
+        continue
+    fi
 
-git checkout -- .
+    ${PHPIZE}
+    ./configure --with-php-config="${PHP_CONFIG}"
+    make -j"${THREAD_CNT}" && make install
 
-echo "[END][Phalcon] ..."
-popd || exit
+    "${PHPIZE}" --clean
+    make clean
+    git checkout -- .
+
+    echo "[END][${ext_dir}] ..."
+    popd || exit
+done
 
 popd || exit
