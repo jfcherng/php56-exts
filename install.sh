@@ -10,6 +10,10 @@ THREAD_CNT=$(getconf _NPROCESSORS_ONLN)
 
 pushd "${SCRIPT_DIR}" || exit
 
+# keep fresh state
+git clean -dfx
+git checkout -- .
+
 for script in exts-simple/*.sh; do
     bash "${script}"
 done
