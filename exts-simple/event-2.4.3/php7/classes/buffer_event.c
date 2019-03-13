@@ -1,6 +1,6 @@
 /*
    +----------------------------------------------------------------------+
-   | PHP Version 5                                                        |
+   | PHP Version 7                                                        |
    +----------------------------------------------------------------------+
    | Copyright (c) 1997-2016 The PHP Group                                |
    +----------------------------------------------------------------------+
@@ -27,7 +27,7 @@ extern zend_class_entry *php_event_dns_base_ce;
 #define _ret_if_invalid_bevent_ptr(bev)             \
 {                                                   \
     if (!bev->bevent) {                             \
-        php_error_docref(NULL TSRMLS_CC, E_WARNING, \
+        php_error_docref(NULL, E_WARNING, \
                 "Buffer Event is not initialized"); \
         RETURN_FALSE; \
     }                                               \
@@ -35,192 +35,210 @@ extern zend_class_entry *php_event_dns_base_ce;
 
 /* {{{ bevent_rw_cb
  * Is called from the bufferevent read and write callbacks */
-static zend_always_inline void bevent_rw_cb(struct bufferevent *bevent, php_event_bevent_t *bev, zend_fcall_info *pfci, zend_fcall_info_cache *pfcc)
+static zend_always_inline void bevent_rw_cb(struct bufferevent *bevent, php_event_bevent_t *bev, php_event_callback_t *pcb)
 {
 
-	zval  *arg_data;
-	zval  *arg_self;
-	zval **args[2];
-	zval  *retval_ptr = NULL;
+	zval              argv[2];
+	zval              retval;
 	php_event_base_t *b;
-	PHP_EVENT_TSRM_DECL
+	zend_string      *func_name;
+	zend_fcall_info   fci;
+	zval              zcallable;
 
 	PHP_EVENT_ASSERT(bev);
 	PHP_EVENT_ASSERT(bevent);
 	PHP_EVENT_ASSERT(bevent == bev->bevent);
-	PHP_EVENT_ASSERT(pfci && pfcc);
-	PHP_EVENT_ASSERT(bev->self);
-	PHP_EVENT_ASSERT(bev->base);
 
-	arg_data = bev->data;
+	/* Protect against accidental destruction of the func name before zend_call_function() finished */
+	ZVAL_COPY(&zcallable, &pcb->func_name);
 
-	PHP_EVENT_TSRMLS_FETCH_FROM_CTX(bev->thread_ctx);
+	if (!zend_is_callable(&zcallable, IS_CALLABLE_STRICT, &func_name)) {
+		zend_string_release(func_name);
+		return;
+	}
+	zend_string_release(func_name);
 
-	if (ZEND_FCI_INITIALIZED(*pfci)) {
 #ifdef HAVE_EVENT_PTHREADS_LIB
-		if (bevent) {
-			bufferevent_lock(bevent);
-		}
+	if (bevent) {
+		bufferevent_lock(bevent);
+	}
 #endif
-		/* Setup callback args */
+	if (Z_ISUNDEF(bev->self)) {
+		ZVAL_NULL(&argv[0]);
+	} else {
+		ZVAL_COPY(&argv[0], &bev->self);
+	}
 
-		arg_self = bev->self;
-		if (arg_self) {
-			Z_ADDREF_P(arg_self);
-		} else {
-			ALLOC_INIT_ZVAL(arg_self);
+	if (Z_ISUNDEF(bev->data)) {
+		ZVAL_NULL(&argv[1]);
+	} else {
+		ZVAL_COPY(&argv[1], &bev->data);
+	}
+
+	fci.size = sizeof(fci);
+#ifdef HAVE_PHP_ZEND_FCALL_INFO_FUNCTION_TABLE
+	fci.function_table = EG(function_table);
+#endif
+	ZVAL_COPY_VALUE(&fci.function_name, &zcallable);
+	fci.object = NULL;
+	fci.retval = &retval;
+	fci.params = argv;
+	fci.param_count = 2;
+	fci.no_separation  = 1;
+#ifdef HAVE_PHP_ZEND_FCALL_INFO_SYMBOL_TABLE
+	fci.symbol_table = NULL;
+#endif
+
+	if (zend_call_function(&fci, &pcb->fci_cache) == SUCCESS) {
+		if (!Z_ISUNDEF(retval)) {
+			zval_ptr_dtor(&retval);
 		}
-		args[0] = &arg_self;
+	} else {
+		if (EG(exception)) {
+			PHP_EVENT_ASSERT(!Z_ISUNDEF(bev->base));
+			b = Z_EVENT_BASE_OBJ_P(&bev->base);
+			event_base_loopbreak(b->base);
 
-		if (arg_data) {
-			Z_ADDREF_P(arg_data);
-		} else {
-			ALLOC_INIT_ZVAL(arg_data);
-		}
-		args[1] = &arg_data;
-
-		/* Prepare callback */
-		pfci->params		 = args;
-		pfci->retval_ptr_ptr = &retval_ptr;
-		pfci->param_count	 = 2;
-		pfci->no_separation  = 1;
-
-		if (zend_call_function(pfci, pfcc TSRMLS_CC) == SUCCESS && retval_ptr) {
-			zval_ptr_dtor(&retval_ptr);
-		} else {
-			if (EG(exception)) {
-				PHP_EVENT_ASSERT(bev->base);
-				PHP_EVENT_FETCH_BASE(b, bev->base);
-				event_base_loopbreak(b->base);
-
-				zval_ptr_dtor(&arg_data);
-			} else {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING,
-						"An error occurred while invoking the callback");
+			if (!Z_ISUNDEF(argv[0])) {
+				zval_ptr_dtor(&argv[0]);
 			}
-        }
+		} else {
+			php_error_docref(NULL, E_WARNING, "Failed to invoke bufferevent callback");
+		}
+	}
 
-		zval_ptr_dtor(&arg_data);
+	zval_ptr_dtor(&zcallable);
+
+	if (!Z_ISUNDEF(argv[0])) {
+		zval_ptr_dtor(&argv[0]);
+	}
 
 #ifdef HAVE_EVENT_PTHREADS_LIB
-		if (bevent) {
-			bufferevent_unlock(bevent);
-		}
+	if (bevent) {
+		bufferevent_unlock(bevent);
+	}
 #endif
-        zval_ptr_dtor(&arg_self);
+
+	if (!Z_ISUNDEF(argv[1])) {
+		zval_ptr_dtor(&argv[1]);
 	}
 }
 /* }}} */
 
-/* {{{ bevent_read_cb */
-static void bevent_read_cb(struct bufferevent *bevent, void *ptr)
+static void bevent_read_cb(struct bufferevent *bevent, void *ptr)/*{{{*/
 {
-	php_event_bevent_t *bev = (php_event_bevent_t *) ptr;
+	php_event_bevent_t *bev = (php_event_bevent_t *)ptr;
+	bevent_rw_cb(bevent, bev, &bev->cb_read);
+}/*}}}*/
 
-	bevent_rw_cb(bevent, bev, bev->fci_read, bev->fcc_read);
-}
-/* }}} */
-
-/* {{{ bevent_write_cb */
-static void bevent_write_cb(struct bufferevent *bevent, void *ptr)
+static void bevent_write_cb(struct bufferevent *bevent, void *ptr)/*{{{*/
 {
-	php_event_bevent_t *bev = (php_event_bevent_t *) ptr;
-
-	bevent_rw_cb(bevent, bev, bev->fci_write, bev->fcc_write);
-}
-/* }}} */
+	php_event_bevent_t *bev = (php_event_bevent_t *)ptr;
+	bevent_rw_cb(bevent, bev, &bev->cb_write);
+}/*}}}*/
 
 /* {{{ bevent_event_cb */
 static void bevent_event_cb(struct bufferevent *bevent, short events, void *ptr)
 {
-	php_event_bevent_t    *bev  = (php_event_bevent_t *) ptr;
-	zend_fcall_info       *pfci = bev->fci_event;
-	zend_fcall_info_cache *pfcc = bev->fcc_event;
-	zval  *arg_data;
-	zval  *arg_events;
-	zval  *arg_self;
-	zval **args[3];
-	zval  *retval_ptr = NULL;
-	php_event_base_t *b;
-	PHP_EVENT_TSRM_DECL
+	php_event_bevent_t *bev       = (php_event_bevent_t *)ptr;
+	zend_fcall_info     fci;
+	zval                argv[3];
+	zval                retval;
+	php_event_base_t   *b;
+	zend_string        *func_name;
+	zval                zcallable;
 
-	PHP_EVENT_ASSERT(pfci && pfcc);
 	PHP_EVENT_ASSERT(bevent);
 	PHP_EVENT_ASSERT(bev->bevent == bevent);
-	PHP_EVENT_ASSERT(bev->self);
-	PHP_EVENT_ASSERT(bev->base);
 
-	arg_data = bev->data;
+	/* Protect against accidental destruction of the func name before zend_call_function() finished */
+	ZVAL_COPY(&zcallable, &bev->cb_event.func_name);
 
-	PHP_EVENT_TSRMLS_FETCH_FROM_CTX(bev->thread_ctx);
+	if (!zend_is_callable(&zcallable, IS_CALLABLE_STRICT, &func_name)) {
+		zend_string_release(func_name);
+		return;
+	}
+	zend_string_release(func_name);
 
-	if (ZEND_FCI_INITIALIZED(*pfci)) {
 #ifdef HAVE_EVENT_PTHREADS_LIB
-		if (bevent) {
-			bufferevent_lock(bevent);
-		}
+	if (bevent) {
+		bufferevent_lock(bevent);
+	}
 #endif
 
-		/* Setup callback args */
+	if (Z_ISUNDEF(bev->self)) {
+		ZVAL_NULL(&argv[0]);
+	} else {
+		ZVAL_COPY(&argv[0], &bev->self);
+	}
 
-		arg_self = bev->self;
-		if (arg_self) {
-			Z_ADDREF_P(arg_self);
-		} else {
-			ALLOC_INIT_ZVAL(arg_self);
+	ZVAL_LONG(&argv[1], events);
+
+	if (Z_ISUNDEF(bev->data)) {
+		ZVAL_NULL(&argv[2]);
+	} else {
+		ZVAL_COPY(&argv[2], &bev->data);
+	}
+
+	fci.size = sizeof(fci);
+#ifdef HAVE_PHP_ZEND_FCALL_INFO_FUNCTION_TABLE
+	fci.function_table = EG(function_table);
+#endif
+	ZVAL_COPY_VALUE(&fci.function_name, &zcallable);
+	fci.object = NULL;
+	fci.retval = &retval;
+	fci.params = argv;
+	fci.param_count = 3;
+	fci.no_separation  = 1;
+#ifdef HAVE_PHP_ZEND_FCALL_INFO_SYMBOL_TABLE
+	fci.symbol_table = NULL;
+#endif
+
+	if (zend_call_function(&fci, &bev->cb_event.fci_cache) == SUCCESS) {
+		if (!Z_ISUNDEF(retval)) {
+			zval_ptr_dtor(&retval);
 		}
-		args[0] = &bev->self;
+	} else {
+		if (EG(exception)) {
+			PHP_EVENT_ASSERT(!Z_ISUNDEF(bev->base));
+			b = Z_EVENT_BASE_OBJ_P(&bev->base);
+			event_base_loopbreak(b->base);
 
-		MAKE_STD_ZVAL(arg_events);
-		ZVAL_LONG(arg_events, events);
-		args[1] = &arg_events;
-
-		if (arg_data) {
-			Z_ADDREF_P(arg_data);
-		} else {
-			ALLOC_INIT_ZVAL(arg_data);
-		}
-		args[2] = &arg_data;
-
-		/* Prepare callback */
-		pfci->params		 = args;
-		pfci->retval_ptr_ptr = &retval_ptr;
-		pfci->param_count	 = 3;
-		pfci->no_separation  = 1;
-
-		if (zend_call_function(pfci, pfcc TSRMLS_CC) == SUCCESS && retval_ptr) {
-			zval_ptr_dtor(&retval_ptr);
-		} else {
-			if (EG(exception)) {
-				PHP_EVENT_ASSERT(bev->base);
-				PHP_EVENT_FETCH_BASE(b, bev->base);
-				event_base_loopbreak(b->base);
-
-				zval_ptr_dtor(&arg_events);
-				zval_ptr_dtor(&arg_data);
-			} else {
-				php_error_docref(NULL TSRMLS_CC, E_WARNING,
-						"An error occurred while invoking the callback");
+			if (!Z_ISUNDEF(argv[0])) {
+				zval_ptr_dtor(&argv[0]);
 			}
+			if (!Z_ISUNDEF(argv[1])) {
+				zval_ptr_dtor(&argv[1]);
+			}
+		} else {
+			php_error_docref(NULL, E_WARNING, "Failed to invoke bufferevent event callback");
 		}
+	}
 
-		zval_ptr_dtor(&arg_events);
-		zval_ptr_dtor(&arg_data);
+	zval_ptr_dtor(&zcallable);
 
-		PHP_EVENT_ASSERT(bevent);
+	if (!Z_ISUNDEF(argv[0])) {
+		zval_ptr_dtor(&argv[0]);
+	}
+
 #ifdef HAVE_EVENT_PTHREADS_LIB
-		if (bevent) {
-			bufferevent_unlock(bevent);
-		}
+	if (bevent) {
+		bufferevent_unlock(bevent);
+	}
 #endif
-		zval_ptr_dtor(&arg_self);
+
+	if (!Z_ISUNDEF(argv[1])) {
+		zval_ptr_dtor(&argv[1]);
+	}
+	if (!Z_ISUNDEF(argv[2])) {
+		zval_ptr_dtor(&argv[2]);
 	}
 }
 /* }}} */
 
 #ifdef HAVE_EVENT_OPENSSL_LIB
 /* {{{ is_valid_ssl_state */
-static zend_always_inline zend_bool is_valid_ssl_state(long state)
+static zend_always_inline zend_bool is_valid_ssl_state(zend_long state)
 {
 	return (zend_bool) (state == BUFFEREVENT_SSL_OPEN
 			|| state == BUFFEREVENT_SSL_CONNECTING
@@ -228,29 +246,29 @@ static zend_always_inline zend_bool is_valid_ssl_state(long state)
 }
 /* }}} */
 
-static void _create_ssl_filter(INTERNAL_FUNCTION_PARAMETERS, zend_bool deprecated)/*{{{*/
+static void _create_ssl_filter(INTERNAL_FUNCTION_PARAMETERS, zend_bool deprecated)
 {
-	zval                    *zunused;
 	php_event_base_t        *base;
+	zval                    *zunused;
 	zval                    *zunderlying;
 	php_event_bevent_t      *bev_underlying;
 	zval                    *zctx;
 	php_event_ssl_context_t *ectx;
-	long                     state;
-	long                     options        = 0;
+	zend_long                state;
+	zend_long                options        = 0;
 	php_event_bevent_t      *bev;
 	struct bufferevent      *bevent;
 	SSL                     *ssl;
 
 	if (!deprecated) {
-		if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "OOl|l",
+		if (zend_parse_parameters(ZEND_NUM_ARGS(), "OOl|l",
 					&zunderlying, php_event_bevent_ce,
 					&zctx, php_event_ssl_context_ce,
 					&state, &options) == FAILURE) {
 			return;
 		}
 	} else {
-		if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zOOl|l",
+		if (zend_parse_parameters(ZEND_NUM_ARGS(), "zOOl|l",
 					&zunused,
 					&zunderlying, php_event_bevent_ce,
 					&zctx, php_event_ssl_context_ce,
@@ -260,52 +278,52 @@ static void _create_ssl_filter(INTERNAL_FUNCTION_PARAMETERS, zend_bool deprecate
 	}
 
 	if (!is_valid_ssl_state(state)) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
-				"Invalid state specified");
+		php_error_docref(NULL, E_WARNING, "Invalid state specified");
 		RETURN_FALSE;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev_underlying, zunderlying);
+	bev_underlying = Z_EVENT_BEVENT_OBJ_P(zunderlying);
 	_ret_if_invalid_bevent_ptr(bev_underlying);
 
 	/* Must also be the base for the underlying bufferevent. See Libevent reference. */
-	PHP_EVENT_FETCH_BASE(base, bev_underlying->base);
+	base = Z_EVENT_BASE_OBJ_P(&bev_underlying->base);
 
-	PHP_EVENT_FETCH_SSL_CONTEXT(ectx, zctx);
+	ectx = Z_EVENT_SSL_CONTEXT_OBJ_P(zctx);
 
 	PHP_EVENT_INIT_CLASS_OBJECT(return_value, php_event_bevent_ce);
-	PHP_EVENT_FETCH_BEVENT(bev, return_value);
+	bev = Z_EVENT_BEVENT_OBJ_P(return_value);
 
 	if (UNEXPECTED(ectx->ctx == NULL)) {
 		RETURN_FALSE;
 	}
 	ssl = SSL_new(ectx->ctx);
-	if (!ssl) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
-				"Event: Failed creating SSL handle");
+	if (UNEXPECTED(!ssl)) {
+		php_error_docref(NULL, E_WARNING, "Event: Failed creating SSL handle");
 		RETURN_FALSE;
 	}
+	/* Attach ectx to ssl for callbacks */
+	SSL_set_ex_data(ssl, php_event_ssl_data_index, ectx);
 
 #ifdef HAVE_EVENT_PTHREADS_LIB
 	options |= BEV_OPT_THREADSAFE;
 #endif
 	bevent = bufferevent_openssl_filter_new(base->base,
-    		bev_underlying->bevent,
-    		ssl, state, options);
+			bev_underlying->bevent,
+			ssl, state, options);
 	if (bevent == NULL) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
-				"Failed to allocate bufferevent filter");
+		php_error_docref(NULL, E_WARNING, "Failed to allocate bufferevent filter");
 		RETURN_FALSE;
 	}
 	bev->bevent = bevent;
 
-	bev->self = return_value;
-	Z_ADDREF_P(return_value);
+	ZVAL_COPY_VALUE(&bev->self, return_value);
+	ZVAL_COPY(&bev->base, &bev_underlying->base);
 
-	bev->base = bev_underlying->base;
-	Z_ADDREF_P(bev->base);
-}/*}}}*/
-#endif
+	ZVAL_UNDEF(&bev->input);
+	ZVAL_UNDEF(&bev->output);
+	ZVAL_UNDEF(&bev->data);
+}
+#endif /* HAVE_EVENT_OPENSSL_LIB */
 
 /* Private }}} */
 
@@ -322,41 +340,38 @@ static void _create_ssl_filter(INTERNAL_FUNCTION_PARAMETERS, zend_bool deprecate
  * Returns buffer event resource optionally associated with socket resource. */
 PHP_METHOD(EventBufferEvent, __construct)
 {
-	zval                   *zself     = getThis();
-	zval                   *zbase;
-	php_event_base_t       *base;
-	zval                  **ppzfd     = NULL;
-	evutil_socket_t         fd;
-	long                    options   = 0;
-	php_event_bevent_t     *bev;
-	struct bufferevent     *bevent;
-	zend_fcall_info         fci_read  = empty_fcall_info;
-	zend_fcall_info_cache   fcc_read  = empty_fcall_info_cache;
-	zend_fcall_info         fci_write = empty_fcall_info;
-	zend_fcall_info_cache   fcc_write = empty_fcall_info_cache;
-	zend_fcall_info         fci_event = empty_fcall_info;
-	zend_fcall_info_cache   fcc_event = empty_fcall_info_cache;
-	zval                   *zarg      = NULL;
-	bufferevent_data_cb     read_cb;
-	bufferevent_data_cb     write_cb;
-	bufferevent_event_cb    event_cb;
+	zval                 *zself     = getThis();
+	zval                 *zbase;
+	php_event_base_t     *base;
+	zval                 *pzfd      = NULL;
+	evutil_socket_t       fd;
+	zend_long             options   = 0;
+	php_event_bevent_t   *bev;
+	struct bufferevent   *bevent;
+	zval                 *zcb_read  = NULL;
+	zval                 *zcb_write = NULL;
+	zval                 *zcb_event = NULL;
+	zval                 *zarg      = NULL;
+	bufferevent_data_cb   read_cb;
+	bufferevent_data_cb   write_cb;
+	bufferevent_event_cb  event_cb;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O|Z!lf!f!f!z!",
-				&zbase, php_event_base_ce, &ppzfd, &options,
-				&fci_read, &fcc_read,
-				&fci_write, &fcc_write,
-				&fci_event, &fcc_event,
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "o|z!lz!z!z!z!",
+				&zbase, &pzfd, &options,
+				&zcb_read,
+				&zcb_write,
+				&zcb_event,
 				&zarg) == FAILURE) {
 		return;
 	}
 
 	PHP_EVENT_REQUIRE_BASE_BY_REF(zbase);
 
-	if (ppzfd) {
+	if (pzfd) {
 		/* php_event_zval_to_fd reports error
 	 	 * in case if it is not a valid socket resource */
-		/*fd = (evutil_socket_t) php_event_zval_to_fd(ppzfd TSRMLS_CC);*/
-		fd = php_event_zval_to_fd(ppzfd TSRMLS_CC);
+		/*fd = (evutil_socket_t) php_event_zval_to_fd(pzfd);*/
+		fd = php_event_zval_to_fd(pzfd);
 
 		if (fd < 0) {
 			return;
@@ -374,72 +389,60 @@ PHP_METHOD(EventBufferEvent, __construct)
 		options |= BEV_OPT_CLOSE_ON_FREE;
 	}
 
-	PHP_EVENT_FETCH_BASE(base, zbase);
+	base = Z_EVENT_BASE_OBJ_P(zbase);
 
-	PHP_EVENT_FETCH_BEVENT(bev, zself);
+	bev = Z_EVENT_BEVENT_OBJ_P(zself);
 
 #ifdef HAVE_EVENT_PTHREADS_LIB
 	options |= BEV_OPT_THREADSAFE;
 #endif
 	bevent = bufferevent_socket_new(base->base, fd, options);
 	if (bevent == NULL) {
-		php_error_docref(NULL TSRMLS_CC, E_ERROR,
+		php_error_docref(NULL, E_ERROR,
 				"Failed to allocate bufferevent for socket");
 		return;
 	}
 	bev->_internal = 0;
 	bev->bevent = bevent;
 
-	bev->self = zself;
-	Z_ADDREF_P(zself);
+	ZVAL_COPY_VALUE(&bev->self, zself);
+	ZVAL_COPY(&bev->base, zbase);
 
-	bev->base = zbase;
-	Z_ADDREF_P(zbase);
+	ZVAL_UNDEF(&bev->input);
+	ZVAL_UNDEF(&bev->output);
 
-	bev->input = bev->output = NULL;
-
-	if (ZEND_FCI_INITIALIZED(fci_read)) {
+	if (zcb_read) {
 		read_cb = bevent_read_cb;
-		PHP_EVENT_FREE_FCALL_INFO(bev->fci_read, bev->fcc_read);
-		PHP_EVENT_COPY_FCALL_INFO(bev->fci_read, bev->fcc_read, &fci_read, &fcc_read);
+		php_event_replace_callback(&bev->cb_read, zcb_read);
 	} else {
-		if (bev->fci_read) {
-			PHP_EVENT_FREE_FCALL_INFO(bev->fci_read, bev->fcc_read);
-		}
+		php_event_init_callback(&bev->cb_read);
 		read_cb = NULL;
 	}
 
-	if (ZEND_FCI_INITIALIZED(fci_write)) {
+	if (zcb_write) {
 		write_cb = bevent_write_cb;
-		PHP_EVENT_FREE_FCALL_INFO(bev->fci_write, bev->fcc_write);
-		PHP_EVENT_COPY_FCALL_INFO(bev->fci_write, bev->fcc_write, &fci_write, &fcc_write);
+		php_event_replace_callback(&bev->cb_write, zcb_write);
 	} else {
-		if (bev->fci_write) {
-			PHP_EVENT_FREE_FCALL_INFO(bev->fci_write, bev->fcc_write);
-		}
+		php_event_init_callback(&bev->cb_write);
 		write_cb = NULL;
 	}
 
-	if (ZEND_FCI_INITIALIZED(fci_event)) {
+	if (zcb_event) {
 		event_cb = bevent_event_cb;
-		PHP_EVENT_FREE_FCALL_INFO(bev->fci_event, bev->fcc_event);
-		PHP_EVENT_COPY_FCALL_INFO(bev->fci_event, bev->fcc_event, &fci_event, &fcc_event);
+		php_event_replace_callback(&bev->cb_event, zcb_event);
 	} else {
-		if (bev->fci_event) {
-			PHP_EVENT_FREE_FCALL_INFO(bev->fci_event, bev->fcc_event);
-		}
+		php_event_init_callback(&bev->cb_event);
 		event_cb = NULL;
 	}
 
 	if (zarg) {
-		Z_ADDREF_P(zarg);
-		bev->data = zarg;
+		ZVAL_COPY(&bev->data, zarg);
+	} else {
+		ZVAL_UNDEF(&bev->data);
 	}
 
-	TSRMLS_SET_CTX(bev->thread_ctx);
-
 	if (read_cb || write_cb || event_cb || zarg) {
-		bufferevent_setcb(bev->bevent, read_cb, write_cb, event_cb, (void *) bev);
+		bufferevent_setcb(bev->bevent, read_cb, write_cb, event_cb, (void *)bev);
 	}
 }
 /* }}} */
@@ -450,22 +453,36 @@ PHP_METHOD(EventBufferEvent, free)
 	zval               *zbevent = getThis();
 	php_event_bevent_t *bev;
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 
 	if (bev->bevent) {
+#if 0
+		bufferevent_lock(bev->bevent);
+		bufferevent_disable(bev->bevent, EV_WRITE|EV_READ);
+		bufferevent_setcb(bev->bevent, NULL, NULL, NULL, NULL);
+		bufferevent_unlock(bev->bevent);
+#endif
+
 		if (!bev->_internal) {
 			bufferevent_free(bev->bevent);
 		}
 		bev->bevent = 0;
 
+#if 0
 		/* Do it once */
-		if (bev->self) {
+		if (!Z_ISUNDEF(bev->self)) {
 			zval_ptr_dtor(&bev->self);
-			bev->self = NULL;
+			ZVAL_UNDEF(&bev->self);
 		}
-		if (bev->base) {
-			zval_ptr_dtor(&bev->base);
-			bev->base = NULL;
+#else
+		if (bev->_internal && !Z_ISUNDEF(bev->self)) {
+			zval_ptr_dtor(&bev->self);
+			ZVAL_UNDEF(&bev->self);
+		}
+#endif
+		if (!Z_ISUNDEF(bev->base)) {
+			Z_TRY_DELREF(bev->base);
+			ZVAL_UNDEF(&bev->base);
 		}
 	}
 }
@@ -478,7 +495,7 @@ PHP_METHOD(EventBufferEvent, close)
 	php_event_bevent_t *bev;
 	evutil_socket_t     fd;
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 
 	if (bev->bevent) {
 		fd = bufferevent_getfd(bev->bevent);
@@ -505,20 +522,20 @@ PHP_METHOD(EventBufferEvent, createPair)
 {
 	zval               *zbase;
 	php_event_base_t   *base;
-	long                options        = 0;
-	zval               *zbev[2];
+	zend_long               options        = 0;
+	zval               zbev[2];
 	php_event_bevent_t *b[2];
 	struct bufferevent *bevent_pair[2];
 	int                 i;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O|l",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "O|l",
 				&zbase, php_event_base_ce, &options) == FAILURE) {
 		return;
 	}
 
 	PHP_EVENT_REQUIRE_BASE_BY_REF(zbase);
 
-	PHP_EVENT_FETCH_BASE(base, zbase);
+	base = Z_EVENT_BASE_OBJ_P(zbase);
 
 	if (bufferevent_pair_new(base->base, options, bevent_pair)) {
 		RETURN_FALSE;
@@ -527,13 +544,14 @@ PHP_METHOD(EventBufferEvent, createPair)
 	array_init(return_value);
 
 	for (i = 0; i < 2; i++) {
-		MAKE_STD_ZVAL(zbev[i]);
-		PHP_EVENT_INIT_CLASS_OBJECT(zbev[i], php_event_bevent_ce);
-		PHP_EVENT_FETCH_BEVENT(b[i], zbev[i]);
+		PHP_EVENT_INIT_CLASS_OBJECT(&zbev[i], php_event_bevent_ce);
+		b[i] = Z_EVENT_BEVENT_OBJ_P(&zbev[i]);
+		b[i]->bevent = bevent_pair[i];
 
-		b[i]->bevent    = bevent_pair[i];
+		ZVAL_COPY(&b[i]->self, &zbev[i]);
+		ZVAL_COPY(&b[i]->base, zbase);
 
-		add_next_index_zval(return_value, zbev[i]);
+		add_next_index_zval(return_value, &zbev[i]);
 	}
 }
 /* }}} */
@@ -558,19 +576,19 @@ PHP_METHOD(EventBufferEvent, connect)
 	php_event_bevent_t      *bev;
 	zval                    *zbevent  = getThis();
 	char                    *addr;
-	int                      addr_len;
+	size_t                   addr_len;
 	struct sockaddr_storage  ss;
 	int                      ss_len   = sizeof(ss);
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "s",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "s",
 				&addr, &addr_len) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
-	memset(&ss, 0, sizeof(ss));
+	ZEND_SECURE_ZERO(&ss, sizeof(ss));
 
 #ifdef AF_UNIX
 	if (strncasecmp(addr, PHP_EVENT_SUN_PREFIX,
@@ -590,7 +608,7 @@ PHP_METHOD(EventBufferEvent, connect)
 		if (evutil_parse_sockaddr_port(addr, (struct sockaddr *) &ss, &ss_len)) {
 			/* Numeric addresses only. Don't try to resolve hostname. */
 
-			php_error_docref(NULL TSRMLS_CC, E_WARNING,
+			php_error_docref(NULL, E_WARNING,
 					"Failed parsing address: the address is not well-formed, "
 					"or the port is out of range");
 			RETURN_FALSE;
@@ -634,21 +652,24 @@ PHP_METHOD(EventBufferEvent, connectHost)
 	php_event_bevent_t *bev;
 	zval               *zbevent      = getThis();
 	char               *hostname;
-	int                 hostname_len;
-	long                port;
-	long                family       = AF_UNSPEC;
+	size_t              hostname_len;
+	zend_long           port;
+	zend_long           family       = AF_UNSPEC;
 #ifdef HAVE_EVENT_EXTRA_LIB
 	php_event_dns_base_t *dnsb;
-	zval                 *zdns_base = NULL;
+#endif
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O!sl|l",
+#ifdef HAVE_EVENT_EXTRA_LIB
+	zval *zdns_base    = NULL;
+
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "O!sl|l",
 				&zdns_base, php_event_dns_base_ce, &hostname, &hostname_len,
 				&port, &family) == FAILURE) {
 		return;
 	}
 #else
 	zval *zunused;
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "zsl|l",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "zsl|l",
 				&zunused, &hostname, &hostname_len,
 				&port, &family) == FAILURE) {
 		return;
@@ -656,12 +677,12 @@ PHP_METHOD(EventBufferEvent, connectHost)
 #endif
 
 	if (family & ~(AF_INET | AF_INET6 | AF_UNSPEC)) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 				"Invalid address family specified");
 		RETURN_FALSE;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	/* bufferevent_socket_connect() allocates a socket stream internally, if we
@@ -670,14 +691,14 @@ PHP_METHOD(EventBufferEvent, connectHost)
 
 #ifdef HAVE_EVENT_EXTRA_LIB
 	if (zdns_base) {
-		PHP_EVENT_FETCH_DNS_BASE(dnsb, zdns_base);
+		dnsb = Z_EVENT_DNS_BASE_OBJ_P(zdns_base);
 	}
 
 	if (bufferevent_socket_connect_hostname(bev->bevent,
 				(zdns_base ? dnsb->dns_base : NULL),
 				family, hostname, port)) {
 # ifdef PHP_EVENT_DEBUG
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s",
+		php_error_docref(NULL, E_WARNING, "%s",
 				evutil_gai_strerror(bufferevent_socket_get_dns_error(bev->bevent)));
 # endif
 		RETURN_FALSE;
@@ -687,7 +708,7 @@ PHP_METHOD(EventBufferEvent, connectHost)
 				NULL,
 				family, hostname, port)) {
 # ifdef PHP_EVENT_DEBUG
-		php_error_docref(NULL TSRMLS_CC, E_WARNING, "%s",
+		php_error_docref(NULL, E_WARNING, "%s",
 				evutil_gai_strerror(bufferevent_socket_get_dns_error(bev->bevent)));
 # endif
 		RETURN_FALSE;
@@ -713,7 +734,7 @@ PHP_METHOD(EventBufferEvent, getDnsErrorString)
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	err = bufferevent_socket_get_dns_error(bev->bevent);
@@ -721,7 +742,7 @@ PHP_METHOD(EventBufferEvent, getDnsErrorString)
 	if (err == 0) {
 		RETURN_EMPTY_STRING();
 	}
-	RETVAL_STRING(evutil_gai_strerror(err), 1);
+	RETVAL_STRING(evutil_gai_strerror(err));
 }
 /* }}} */
 
@@ -732,71 +753,54 @@ PHP_METHOD(EventBufferEvent, getDnsErrorString)
  */
 PHP_METHOD(EventBufferEvent, setCallbacks)
 {
-	zval                  *zbevent   = getThis();
-	php_event_bevent_t    *bev;
-	zend_fcall_info        fci_read  = empty_fcall_info;
-	zend_fcall_info_cache  fcc_read  = empty_fcall_info_cache;
-	zend_fcall_info        fci_write = empty_fcall_info;
-	zend_fcall_info_cache  fcc_write = empty_fcall_info_cache;
-	zend_fcall_info        fci_event = empty_fcall_info;
-	zend_fcall_info_cache  fcc_event = empty_fcall_info_cache;
-	zval                  *zarg      = NULL;
-	bufferevent_data_cb    read_cb;
-	bufferevent_data_cb    write_cb;
-	bufferevent_event_cb   event_cb;
+	zval                 *zbevent   = getThis();
+	php_event_bevent_t   *bev;
+	zval                 *zcb_read;
+	zval                 *zcb_write;
+	zval                 *zcb_event;
+	zval                 *zarg      = NULL;
+	bufferevent_data_cb   read_cb;
+	bufferevent_data_cb   write_cb;
+	bufferevent_event_cb  event_cb;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "f!f!f!|z!",
-				&fci_read, &fcc_read,
-				&fci_write, &fcc_write,
-				&fci_event, &fcc_event,
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "z!z!z!|z!",
+				&zcb_read,
+				&zcb_write,
+				&zcb_event,
 				&zarg) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
-	if (ZEND_FCI_INITIALIZED(fci_read)) {
+	if (zcb_read) {
 		read_cb = bevent_read_cb;
-		PHP_EVENT_FREE_FCALL_INFO(bev->fci_read, bev->fcc_read);
-		PHP_EVENT_COPY_FCALL_INFO(bev->fci_read, bev->fcc_read, &fci_read, &fcc_read);
+		php_event_replace_callback(&bev->cb_read, zcb_read);
 	} else {
-		if (bev->fci_read) {
-			PHP_EVENT_FREE_FCALL_INFO(bev->fci_read, bev->fcc_read);
-		}
+		php_event_free_callback(&bev->cb_read);
 		read_cb = NULL;
 	}
 
-	if (ZEND_FCI_INITIALIZED(fci_write)) {
+	if (zcb_write) {
 		write_cb = bevent_write_cb;
-		PHP_EVENT_FREE_FCALL_INFO(bev->fci_write, bev->fcc_write);
-		PHP_EVENT_COPY_FCALL_INFO(bev->fci_write, bev->fcc_write, &fci_write, &fcc_write);
+		php_event_replace_callback(&bev->cb_write, zcb_write);
 	} else {
-		if (bev->fci_write) {
-			PHP_EVENT_FREE_FCALL_INFO(bev->fci_write, bev->fcc_write);
-		}
+		php_event_free_callback(&bev->cb_write);
 		write_cb = NULL;
 	}
 
-	if (ZEND_FCI_INITIALIZED(fci_event)) {
+	if (zcb_event) {
 		event_cb = bevent_event_cb;
-		PHP_EVENT_FREE_FCALL_INFO(bev->fci_event, bev->fcc_event);
-		PHP_EVENT_COPY_FCALL_INFO(bev->fci_event, bev->fcc_event, &fci_event, &fcc_event);
+		php_event_replace_callback(&bev->cb_event, zcb_event);
 	} else {
-		if (bev->fci_event) {
-			PHP_EVENT_FREE_FCALL_INFO(bev->fci_event, bev->fcc_event);
-		}
+		php_event_free_callback(&bev->cb_event);
 		event_cb = NULL;
 	}
 
-	if (zarg) {
-		Z_ADDREF_P(zarg);
-		bev->data = zarg;
-	}
+	php_event_replace_zval(&bev->data, zarg);
 
-	TSRMLS_SET_CTX(bev->thread_ctx);
-
-	bufferevent_setcb(bev->bevent, read_cb, write_cb, event_cb, (void *) bev);
+	bufferevent_setcb(bev->bevent, read_cb, write_cb, event_cb, (void *)bev);
 }
 /* }}} */
 
@@ -806,14 +810,14 @@ PHP_METHOD(EventBufferEvent, enable)
 {
 	zval               *zbevent = getThis();
 	php_event_bevent_t *bev;
-	long                events;
+	zend_long               events;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "l",
 				&events) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	if (bufferevent_enable(bev->bevent, events)) {
@@ -830,14 +834,14 @@ PHP_METHOD(EventBufferEvent,disable)
 {
 	zval               *zbevent = getThis();
 	php_event_bevent_t *bev;
-	long                events;
+	zend_long               events;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "l",
 				&events) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	if (bufferevent_disable(bev->bevent, events)) {
@@ -859,7 +863,7 @@ PHP_METHOD(EventBufferEvent, getEnabled)
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 
@@ -880,14 +884,14 @@ PHP_METHOD(EventBufferEvent, getInput)
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	PHP_EVENT_INIT_CLASS_OBJECT(return_value, php_event_buffer_ce);
-	PHP_EVENT_FETCH_BUFFER(b, return_value);
+	b = Z_EVENT_BUFFER_OBJ_P(return_value);
 	/* Don't do this. It's normal to have refcount = 1 here.
 	 * If we got bugs, we most likely free'd an internal buffer somewhere
-	 * Z_ADDREF_P(return_value);*/
+	 * Z_TRY_ADDREF_P(return_value);*/
 
 	b->buf      = bufferevent_get_input(bev->bevent);
 	b->internal = 1;
@@ -907,14 +911,14 @@ PHP_METHOD(EventBufferEvent, getOutput)
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	PHP_EVENT_INIT_CLASS_OBJECT(return_value, php_event_buffer_ce);
-	PHP_EVENT_FETCH_BUFFER(b, return_value);
+	b = Z_EVENT_BUFFER_OBJ_P(return_value);
 	/* Don't do this. It's normal to have refcount = 1 here.
 	 * If we got bugs, we most likely free'd an internal buffer somewhere
-	 * Z_ADDREF_P(return_value);*/
+	 * Z_TRY_ADDREF_P(return_value);*/
 
 	b->buf      = bufferevent_get_output(bev->bevent);
 	b->internal = 1;
@@ -927,16 +931,16 @@ PHP_METHOD(EventBufferEvent, setWatermark)
 {
 	zval               *zbevent = getThis();
 	php_event_bevent_t *bev;
-	long                events;
-	long                lowmark;
-	long                highmark;
+	zend_long               events;
+	zend_long               lowmark;
+	zend_long               highmark;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "lll",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "lll",
 				&events, &lowmark, &highmark) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	bufferevent_setwatermark(bev->bevent, events, (size_t) lowmark, (size_t) highmark);
@@ -947,21 +951,19 @@ PHP_METHOD(EventBufferEvent, setWatermark)
  * Adds `data' to a buffer event's output buffer. */
 PHP_METHOD(EventBufferEvent, write)
 {
-	zval               *zbevent = getThis();
+	zval               *zbevent  = getThis();
 	php_event_bevent_t *bev;
-	zval               *zdata;
+	char               *data;
+	size_t              data_len;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "z",
-				&zdata) == FAILURE) {
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "s", &data, &data_len) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
-	convert_to_string(zdata);
-
-	if (bufferevent_write(bev->bevent, Z_STRVAL_P(zdata), Z_STRLEN_P(zdata))) {
+	if (bufferevent_write(bev->bevent, data, data_len)) {
 		RETURN_FALSE;
 	}
 
@@ -978,15 +980,15 @@ PHP_METHOD(EventBufferEvent, writeBuffer)
 	php_event_buffer_t *b;
 	zval               *zbuf;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "O",
 				&zbuf, php_event_buffer_ce) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
-	PHP_EVENT_FETCH_BUFFER(b, zbuf);
+	b = Z_EVENT_BUFFER_OBJ_P(zbuf);
 
 	if (bufferevent_write_buffer(bev->bevent, b->buf)) {
 		RETURN_FALSE;
@@ -1003,21 +1005,21 @@ PHP_METHOD(EventBufferEvent, read)
 {
 	zval               *zbevent = getThis();
 	php_event_bevent_t *bev;
-	long                size;
+	zend_long           size;
 	char               *data;
-	long                ret;
+	zend_long           ret;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "l",
 				&size) == FAILURE) {
 		return;
 	}
 
 	if (size < 0) {
-		/*php_error_docref(NULL TSRMLS_CC, E_WARNING, "Size must be positive");*/
+		/*php_error_docref(NULL, E_WARNING, "Size must be positive");*/
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	data = safe_emalloc(size, sizeof(char), 1);
@@ -1025,7 +1027,7 @@ PHP_METHOD(EventBufferEvent, read)
 	ret = bufferevent_read(bev->bevent, data, size);
 
 	if (ret > 0) {
-		RETVAL_STRINGL(data, ret, 1);
+		RETVAL_STRINGL(data, ret);
 	} else {
 		RETVAL_NULL();
 	}
@@ -1043,15 +1045,15 @@ PHP_METHOD(EventBufferEvent, readBuffer)
 	php_event_buffer_t *b;
 	zval               *zbuf;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "O",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "O",
 				&zbuf, php_event_buffer_ce) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
-	PHP_EVENT_FETCH_BUFFER(b, zbuf);
+	b = Z_EVENT_BUFFER_OBJ_P(zbuf);
 
 	if (bufferevent_read_buffer(bev->bevent, b->buf)) {
 		RETURN_FALSE;
@@ -1068,14 +1070,14 @@ PHP_METHOD(EventBufferEvent, setPriority)
 {
 	zval               *zbevent  = getThis();
 	php_event_bevent_t *bev;
-	long                priority;
+	zend_long               priority;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "l",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "l",
 				&priority) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	if (bufferevent_priority_set(bev->bevent, priority)) {
@@ -1097,12 +1099,12 @@ PHP_METHOD(EventBufferEvent, setTimeouts)
 	struct timeval      tv_read;
 	struct timeval      tv_write;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "dd",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "dd",
 				&timeout_read, &timeout_write) == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	PHP_EVENT_TIMEVAL_SET(tv_read, timeout_read);
@@ -1117,7 +1119,7 @@ PHP_METHOD(EventBufferEvent, setTimeouts)
 /* }}} */
 
 #ifdef HAVE_EVENT_OPENSSL_LIB /* {{{ */
-/* {{{ proto EventBufferEvent EventBufferEvent::sslFilter(mixed unused, EventBufferEvent underlying, EventSslContext ctx, int state[, int options = 0]);
+/* {{{ proto EventBufferEvent EventBufferEvent::sslFilter(zval unused, EventBufferEvent underlying, EventSslContext ctx, int state[, int options = 0]);
  */
 PHP_METHOD(EventBufferEvent, sslFilter)
 {
@@ -1141,17 +1143,17 @@ PHP_METHOD(EventBufferEvent, sslSocket)
 	php_event_base_t         *base;
 	zval                     *zctx;
 	php_event_ssl_context_t  *ectx;
-	zval                    **ppzfd;
+	zval                     *pzfd;
 	evutil_socket_t           fd;
-	long                      state;
-	long                      options = 0;
+	zend_long                     state;
+	zend_long                     options = 0;
 	php_event_bevent_t       *bev;
 	struct bufferevent       *bevent;
 	SSL                      *ssl;
 
-	if (zend_parse_parameters(ZEND_NUM_ARGS() TSRMLS_CC, "OZOl|l",
+	if (zend_parse_parameters(ZEND_NUM_ARGS(), "OzOl|l",
 				&zbase, php_event_base_ce,
-				&ppzfd,
+				&pzfd,
 				&zctx, php_event_ssl_context_ce,
 				&state, &options) == FAILURE) {
 		return;
@@ -1160,22 +1162,22 @@ PHP_METHOD(EventBufferEvent, sslSocket)
 	PHP_EVENT_REQUIRE_BASE_BY_REF(zbase);
 
 	if (!is_valid_ssl_state(state)) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 				"Invalid state specified");
 		RETURN_FALSE;
 	}
 
-	PHP_EVENT_FETCH_BASE(base, zbase);
-	PHP_EVENT_FETCH_SSL_CONTEXT(ectx, zctx);
+	base = Z_EVENT_BASE_OBJ_P(zbase);
+	ectx = Z_EVENT_SSL_CONTEXT_OBJ_P(zctx);
 
 	PHP_EVENT_INIT_CLASS_OBJECT(return_value, php_event_bevent_ce);
-	PHP_EVENT_FETCH_BEVENT(bev, return_value);
+	bev = Z_EVENT_BEVENT_OBJ_P(return_value);
 
-	if (Z_TYPE_PP(ppzfd) == IS_NULL) {
+	if (Z_TYPE_P(pzfd) == IS_NULL) {
 		/* User decided to set fd later via connect or connectHost etc.*/
 		fd = -1;
 	} else {
-		fd = php_event_zval_to_fd(ppzfd TSRMLS_CC);
+		fd = php_event_zval_to_fd(pzfd);
 		if (fd < 0) {
 			RETURN_FALSE;
 		}
@@ -1186,7 +1188,7 @@ PHP_METHOD(EventBufferEvent, sslSocket)
 	PHP_EVENT_ASSERT(ectx->ctx);
 	ssl = SSL_new(ectx->ctx);
 	if (!ssl) {
-		php_error_docref(NULL TSRMLS_CC, E_WARNING,
+		php_error_docref(NULL, E_WARNING,
 				"Event: Failed creating SSL handle");
 		RETURN_FALSE;
 	}
@@ -1198,17 +1200,14 @@ PHP_METHOD(EventBufferEvent, sslSocket)
 #endif
 	bevent = bufferevent_openssl_socket_new(base->base, fd, ssl, state, options);
 	if (bevent == NULL) {
-		php_error_docref(NULL TSRMLS_CC, E_ERROR,
+		php_error_docref(NULL, E_ERROR,
 				"Failed to allocate bufferevent filter");
 		RETURN_FALSE;
 	}
 	bev->bevent = bevent;
 
-	bev->self = return_value;
-	Z_ADDREF_P(return_value);
-
-	bev->base = zbase;
-	Z_ADDREF_P(zbase);
+	ZVAL_COPY_VALUE(&bev->self, return_value);
+	ZVAL_COPY(&bev->base, zbase);
 }
 /* }}} */
 
@@ -1221,18 +1220,18 @@ PHP_METHOD(EventBufferEvent, sslError)
 	zval               *zbevent  = getThis();
 	php_event_bevent_t *bev;
 	char                buf[512];
-	unsigned long       e;
+	zend_ulong          e;
 
 	if (zend_parse_parameters_none() == FAILURE) {
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	e = bufferevent_get_openssl_error(bev->bevent);
 	if (e) {
-		RETURN_STRING(ERR_error_string(e, buf), 1);
+		RETURN_STRING(ERR_error_string(e, buf));
 	}
 
 	RETVAL_FALSE;
@@ -1258,7 +1257,7 @@ PHP_METHOD(EventBufferEvent, sslRenegotiate)
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	bufferevent_ssl_renegotiate(bev->bevent);
@@ -1281,7 +1280,7 @@ PHP_METHOD(EventBufferEvent, sslGetCipherInfo)
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	ssl = bufferevent_openssl_get_ssl(bev->bevent);
@@ -1289,7 +1288,7 @@ PHP_METHOD(EventBufferEvent, sslGetCipherInfo)
 		cipher = SSL_get_current_cipher(ssl);
 		if (cipher) {
 			desc = SSL_CIPHER_description(cipher, NULL, 128);
-			RETVAL_STRING(desc, 1);
+			RETVAL_STRING(desc);
 			OPENSSL_free(desc);
 			return;
 		}
@@ -1313,12 +1312,12 @@ PHP_METHOD(EventBufferEvent, sslGetCipherName)
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	ssl = bufferevent_openssl_get_ssl(bev->bevent);
 	if (ssl) {
-		RETURN_STRING(SSL_get_cipher_name(ssl), 1);
+		RETURN_STRING(SSL_get_cipher_name(ssl));
 	}
 	RETVAL_FALSE;
 }
@@ -1338,12 +1337,12 @@ PHP_METHOD(EventBufferEvent, sslGetCipherVersion)
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	ssl = bufferevent_openssl_get_ssl(bev->bevent);
 	if (ssl) {
-		RETURN_STRING(SSL_get_cipher_version(ssl), 1);
+		RETURN_STRING(SSL_get_cipher_version(ssl));
 	}
 	RETVAL_FALSE;
 }
@@ -1363,12 +1362,12 @@ PHP_METHOD(EventBufferEvent, sslGetProtocol)
 		return;
 	}
 
-	PHP_EVENT_FETCH_BEVENT(bev, zbevent);
+	bev = Z_EVENT_BEVENT_OBJ_P(zbevent);
 	_ret_if_invalid_bevent_ptr(bev);
 
 	ssl = bufferevent_openssl_get_ssl(bev->bevent);
 	if (ssl) {
-		RETURN_STRING(SSL_get_version(ssl), 1);
+		RETURN_STRING(SSL_get_version(ssl));
 	}
 	RETVAL_FALSE;
 }
