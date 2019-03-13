@@ -22,4 +22,8 @@ for script in exts-special/*.sh; do
     bash "${script}"
 done
 
+# keep fresh state
+git clean -dfx
+git checkout -- .
+
 popd || exit
