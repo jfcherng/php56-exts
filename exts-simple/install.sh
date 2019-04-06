@@ -53,4 +53,6 @@ for ext_dir in */; do
     popd || exit
 done
 
+git clean -dfx
+
 popd || exit

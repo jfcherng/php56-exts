@@ -40,4 +40,6 @@ git checkout -- .
 echo "[END][Phalcon] ..."
 popd || exit
 
+git clean -dfx
+
 popd || exit

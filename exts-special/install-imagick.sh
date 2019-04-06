@@ -44,4 +44,6 @@ git checkout -- .
 echo "[END][Imagick] ..."
 popd || exit
 
+git clean -dfx
+
 popd || exit
