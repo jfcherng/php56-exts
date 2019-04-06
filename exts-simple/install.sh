@@ -29,6 +29,9 @@ test -f "${PHP_CONFIG}" || (echo "${PHP_CONFIG} not found" && exit)
 pushd "${SCRIPT_DIR}" || exit
 
 for ext_dir in */; do
+    # remove trailing slash
+    ext_dir="${ext_dir%/}"
+
     pushd "${ext_dir}" || exit
     echo "[BEGIN][${ext_dir}] ..."
 
